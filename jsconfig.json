@@ -1,0 +1,26 @@
+// {
+//     "compilerOptions": {
+//       "target": "esnext",
+//       "module": "commonjs",
+//       "baseUrl": "./",
+//       "paths": {
+//         "*": ["src/*"]
+//       }
+//     },
+//     "exclude": ["node_modules"]
+//   }
+  
+
+{
+  "compilerOptions": {
+    "baseUrl": "./",
+    "paths": {
+      "screen/*": ["src/screens/*"],
+      "components/*": ["src/components/*"],
+      "assets/*": ["src/assets/*"],
+      "navigation/*": ["src/navigation/*"],
+      "services/*": ["src/services/*"],
+      "utils/*": ["src/utils/*"]
+    }
+  }
+}
