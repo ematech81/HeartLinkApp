@@ -85,7 +85,7 @@ export default function WelcomeScreen({ navigation }) {
       >
         {/* Placeholder image — replace Image source with your asset */}
         <Image
-          source={{ uri: 'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=800' }}
+          source={ require('../../media/images/onbord1.png')}
           style={styles.cardImage}
           resizeMode="cover"
         />

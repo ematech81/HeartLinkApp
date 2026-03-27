@@ -11,14 +11,14 @@ import {
   ScrollView,
 } from 'react-native';
 import Colors from 'src/constants/Colors';
-import AppStatusBar from 'src/components/common/AppStatusBar';
-import BackButton from 'src/components/common/BackButton';
-import Button from 'src/components/common/Button';
 import { useAuth } from 'src/store/authStore';
 import { Radius, Shadows, Spacing } from 'src/constants/layout';
 import { FontSize, FontWeight } from 'src/constants/topography';
-import { Routes } from 'src/constants/appConstants';
+import { Routes, Validation } from 'src/constants/appConstants';
 import { AuthAPI } from 'services/ApiServices';
+import AppStatusBar from 'src/component/common/AppStatusBar';
+import BackButton from 'src/component/common/BackButton';
+import Button from 'src/component/common/Button';
 
 const OTP_LENGTH = Validation.otpLength; // 6
 const RESEND_COUNTDOWN = 60;
@@ -26,12 +26,14 @@ const RESEND_COUNTDOWN = 60;
 export default function OTPScreen({ navigation, route }) {
   const phone = route?.params?.phone ?? '';
   const isVerifyingRegistration = route?.params?.isRegistration ?? false;
+  
 
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(RESEND_COUNTDOWN);
   const [canResend, setCanResend] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
+  const { loginWithToken } = useAuth();
 
   const inputs = useRef([]);
   const { login } = useAuth();
@@ -83,34 +85,34 @@ export default function OTPScreen({ navigation, route }) {
   };
 
   // ── Verify OTP ───────────────────────────────────────────────────────────────
+  // At the top — add loginWithToken to useAuth
+
+  
+  // Replace the verifyOtp function with this:
   const verifyOtp = async (code) => {
     const otpCode = code ?? otp.join('');
     if (otpCode.length < OTP_LENGTH) {
       Alert.alert('Incomplete', 'Please enter the full 6-digit code.');
       return;
     }
-
     setLoading(true);
     try {
       const data = await AuthAPI.verifyOtp(phone, otpCode);
-      // Save session and navigate into app
-      await login({ token: data.token, user: data.user });
-    } catch (err) {
-      Alert.alert('Invalid Code', err.message || 'The code you entered is incorrect. Please try again.');
-      // Clear boxes and refocus
-      setOtp(Array(OTP_LENGTH).fill(''));
-      inputs.current[0]?.focus();
-
-      // Inside verifyOtp() in OTPScreen.js
+  
       if (route?.params?.isForgotPassword) {
+        // Go to reset password screen
         navigation.navigate(Routes.RESET_PASSWORD, {
           token: data.resetToken,
           email: route.params.email,
         });
       } else {
-        await login({ token: data.token, user: data.user });
+        // Log user in — backend returns { success, token, user }
+        await loginWithToken(data.token, data.user);
       }
-
+    } catch (err) {
+      Alert.alert('Invalid Code', err.message || 'Please try again.');
+      setOtp(Array(OTP_LENGTH).fill(''));
+      inputs.current[0]?.focus();
     } finally {
       setLoading(false);
     }

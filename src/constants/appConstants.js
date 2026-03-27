@@ -15,7 +15,7 @@ export const Routes = {
 
   // Main App (Tab Navigator)
   MAIN: 'Main',
-  WELCOME: 'Welcome', 
+  WELCOME: 'Welcome',  
   HOME: 'Home',
   DISCOVER: 'Discover',
   MATCHES: 'Matches',

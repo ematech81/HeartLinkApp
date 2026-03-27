@@ -1,136 +1,187 @@
+
 /**
- * HeartLink Auth Store
- * React Context + useReducer for global auth state.
- * No third-party state library required.
+ * HeartLink AuthStore
+ * React Context + useReducer — no third-party state lib needed.
+ * Wired to the Node.js/MongoDB backend via ApiServices.
  */
 
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthAPI } from 'services/ApiServices';
-import AuthService from 'services/authService';
-import SocketService from 'services/socketService';
-
-
-// ─── State shape ──────────────────────────────────────────────────────────────
+import { StorageKeys } from 'src/constants/appConstants';
+// ── Initial state ─────────────────────────────────────────────────────────────
 const initialState = {
-  user: null,
-  token: null,
+  user:            null,
+  token:           null,
   isAuthenticated: false,
-  isLoading: true,        // true while checking stored session on app start
-  error: null,
+  isLoading:       false,  // ← false by default, only true during API calls
+  isInitializing:  true,   // ← separate flag for app startup session check
+  error:           null,
 };
-
-// ─── Actions ──────────────────────────────────────────────────────────────────
-const Actions = {
-  SET_LOADING: 'SET_LOADING',
-  LOGIN_SUCCESS: 'LOGIN_SUCCESS',
-  LOGOUT: 'LOGOUT',
-  UPDATE_USER: 'UPDATE_USER',
-  SET_ERROR: 'SET_ERROR',
-};
-
+ 
+// ── Actions ───────────────────────────────────────────────────────────────────
+const SET_LOADING       = 'SET_LOADING';
+const SET_INITIALIZING  = 'SET_INITIALIZING';
+const AUTH_SUCCESS      = 'AUTH_SUCCESS';
+const LOGOUT            = 'LOGOUT';
+const UPDATE_USER       = 'UPDATE_USER';
+const SET_ERROR         = 'SET_ERROR';
+ 
 function reducer(state, action) {
   switch (action.type) {
-    case Actions.SET_LOADING:
+    case SET_LOADING:
       return { ...state, isLoading: action.payload };
-    case Actions.LOGIN_SUCCESS:
+    case SET_INITIALIZING:
+      return { ...state, isInitializing: action.payload };
+    case AUTH_SUCCESS:
       return {
         ...state,
-        user: action.payload.user,
-        token: action.payload.token,
+        user:            action.payload.user,
+        token:           action.payload.token,
         isAuthenticated: true,
-        isLoading: false,
-        error: null,
+        isLoading:       false,
+        isInitializing:  false,
+        error:           null,
       };
-    case Actions.LOGOUT:
-      return { ...initialState, isLoading: false };
-    case Actions.UPDATE_USER:
+    case LOGOUT:
+      return {
+        ...initialState,
+        isLoading:      false,
+        isInitializing: false,
+      };
+    case UPDATE_USER:
       return { ...state, user: { ...state.user, ...action.payload } };
-    case Actions.SET_ERROR:
+    case SET_ERROR:
       return { ...state, error: action.payload, isLoading: false };
     default:
       return state;
   }
 }
-
-// ─── Context ──────────────────────────────────────────────────────────────────
+ 
 const AuthContext = createContext(null);
-
+ 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const saveSession = async (token, user) => {
+  await AsyncStorage.setItem(StorageKeys.AUTH_TOKEN, JSON.stringify(token));
+  await AsyncStorage.setItem(StorageKeys.USER, JSON.stringify(user));
+};
+ 
+const clearSession = async () => {
+  await AsyncStorage.multiRemove([StorageKeys.AUTH_TOKEN, StorageKeys.USER]);
+};
+ 
+// ── Provider ──────────────────────────────────────────────────────────────────
 export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
-
-  // On mount: restore session from storage
+ 
+  // ── Restore session on app start ──────────────────────────────────────────
   useEffect(() => {
-    (async () => {
-      const session = await AuthService.loadSession();
-      if (session) {
-        const freshUser = await AuthService.validateSession();
-        if (freshUser) {
-          dispatch({ type: Actions.LOGIN_SUCCESS, payload: { token: session.token, user: freshUser } });
-          await SocketService.connect();
-          SocketService.goOnline(freshUser._id);
+    const restoreSession = async () => {
+      try {
+        const [[, tokenRaw], [, userRaw]] = await AsyncStorage.multiGet([
+          StorageKeys.AUTH_TOKEN,
+          StorageKeys.USER,
+        ]);
+ 
+        const token = tokenRaw ? JSON.parse(tokenRaw) : null;
+        const user  = userRaw  ? JSON.parse(userRaw)  : null;
+ 
+        if (token && user) {
+          try {
+            // Validate with backend
+            const data = await AuthAPI.getMe();
+            dispatch({
+              type: AUTH_SUCCESS,
+              payload: { token, user: data.user },
+            });
+          } catch {
+            // Token invalid/expired — clear and proceed as guest
+            await clearSession();
+            dispatch({ type: SET_INITIALIZING, payload: false });
+          }
         } else {
-          await AuthService.clearSession();
-          dispatch({ type: Actions.SET_LOADING, payload: false });
+          // No stored session — proceed as guest
+          dispatch({ type: SET_INITIALIZING, payload: false });
         }
-      } else {
-        dispatch({ type: Actions.SET_LOADING, payload: false });
+      } catch {
+        // Storage error — proceed as guest
+        dispatch({ type: SET_INITIALIZING, payload: false });
       }
-    })();
+    };
+ 
+    restoreSession();
   }, []);
-
-  // ─── Actions ────────────────────────────────────────────────────────────────
-
-  const login = async (credentials) => {
-    dispatch({ type: Actions.SET_LOADING, payload: true });
-    try {
-      const data = await AuthAPI.login(credentials);
-      await AuthService.saveSession(data.token, data.user);
-      dispatch({ type: Actions.LOGIN_SUCCESS, payload: { token: data.token, user: data.user } });
-      await SocketService.connect();
-      SocketService.goOnline(data.user._id);
-      return { success: true };
-    } catch (err) {
-      dispatch({ type: Actions.SET_ERROR, payload: err.message });
-      return { success: false, message: err.message };
-    }
-  };
-
+ 
+  // ── Register ──────────────────────────────────────────────────────────────
   const register = async (userData) => {
-    dispatch({ type: Actions.SET_LOADING, payload: true });
+    dispatch({ type: SET_LOADING, payload: true });
     try {
       const data = await AuthAPI.register(userData);
-      await AuthService.saveSession(data.token, data.user);
-      dispatch({ type: Actions.LOGIN_SUCCESS, payload: { token: data.token, user: data.user } });
+      await saveSession(data.token, data.user);
+      dispatch({ type: AUTH_SUCCESS, payload: { token: data.token, user: data.user } });
       return { success: true };
     } catch (err) {
-      dispatch({ type: Actions.SET_ERROR, payload: err.message });
+      dispatch({ type: SET_ERROR, payload: err.message });
+      dispatch({ type: SET_LOADING, payload: false });
       return { success: false, message: err.message };
     }
   };
-
+ 
+  // ── Login ─────────────────────────────────────────────────────────────────
+  const login = async (credentials) => {
+    dispatch({ type: SET_LOADING, payload: true });
+    try {
+      const data = await AuthAPI.login(credentials);
+      await saveSession(data.token, data.user);
+      dispatch({ type: AUTH_SUCCESS, payload: { token: data.token, user: data.user } });
+      return { success: true };
+    } catch (err) {
+      dispatch({ type: SET_ERROR, payload: err.message });
+      dispatch({ type: SET_LOADING, payload: false });
+      return { success: false, message: err.message };
+    }
+  };
+ 
+  // ── Login with token (after OTP verify) ──────────────────────────────────
+  const loginWithToken = async (token, user) => {
+    await saveSession(token, user);
+    dispatch({ type: AUTH_SUCCESS, payload: { token, user } });
+  };
+ 
+  // ── Logout ────────────────────────────────────────────────────────────────
   const logout = async () => {
-    SocketService.disconnect();
-    await AuthService.clearSession();
-    dispatch({ type: Actions.LOGOUT });
+    await clearSession();
+    dispatch({ type: LOGOUT });
   };
-
-  const updateUser = (updates) => {
-    dispatch({ type: Actions.UPDATE_USER, payload: updates });
-    // Persist updated user
-    AuthService.saveSession(state.token, { ...state.user, ...updates });
+ 
+  // ── Update user locally ───────────────────────────────────────────────────
+  const updateUser = async (updates) => {
+    const updated = { ...state.user, ...updates };
+    await AsyncStorage.setItem(StorageKeys.USER, JSON.stringify(updated));
+    dispatch({ type: UPDATE_USER, payload: updates });
   };
-
-  const clearError = () => dispatch({ type: Actions.SET_ERROR, payload: null });
-
+ 
+  const clearError = () => dispatch({ type: SET_ERROR, payload: null });
+ 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout, updateUser, clearError }}>
+    <AuthContext.Provider
+      value={{
+        ...state,
+        register,
+        login,
+        loginWithToken,
+        logout,
+        updateUser,
+        clearError,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
-
+ 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) throw new Error('useAuth must be used within <AuthProvider>');
   return ctx;
 };

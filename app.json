@@ -21,10 +21,25 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.anonymous.heartlinkapp"
+      "package": "com.anonymous.heartlinkapp",
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "HeartLink needs access to your photos to set your profile picture.",
+          "cameraPermission": "HeartLink needs access to your camera to take a profile photo."
+        }
+      ],
+      "expo-web-browser"
+    ]
   }
 }

@@ -20,24 +20,23 @@ const { width, height } = Dimensions.get('window');
 const SLIDES = [
   {
     id: '1',
-    image: require('../..assets/images/firstSlide.jpeg'),
+    image: require('../../media/images/firstSlide.jpeg'),
     title: 'Find Your Perfect\nMatch Globally',
     subtitle: 'Connect with diverse people from across the globe and build meaningful relationships that transcend borders.',
   },
   {
     id: '2',
-    image: require('../../assets/images/secondSlide.jpeg'),
+    image: require('../../media/images/secondSlide.jpeg'),
     title: 'Build Meaningful\nRelationships',
     subtitle: 'Go beyond swipes. Match, chat, and truly get to know someone who complements your life.',
   },
   {
     id: '3',
-    image: require('../../assets/images/thirdSlide.jpeg'),
+    image: require('../../media/images/thirdSlide.jpeg'),
     title: 'Safe & Verified\nProfiles',
     subtitle: 'Every profile is moderated. Verified badges, block and report tools keep your experience safe.',
   },
 ];
-
 // ─── Dot indicator ────────────────────────────────────────────────────────────
 function DotIndicator({ count, activeIndex, scrollX }) {
   return (
