@@ -30,6 +30,7 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('🔌 [Socket] Connected:', this.socket.id);
+      // Identify the user
       this.socket.emit('user:join', userId);
     });
 

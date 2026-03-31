@@ -15,6 +15,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Image,
+  ActivityIndicator,
+  Modal,
+  Linking,
 } from 'react-native';
 
 // import DateTimePicker from '@react-native-community/datetimepicker';
@@ -37,9 +41,9 @@ import { useAuth } from 'src/store/authStore';
 import Colors from 'src/constants/Colors';
 import AppStatusBar from 'src/component/common/AppStatusBar';
 import DatePickerField from 'src/component/datePicker';
-import { AuthAPI } from 'services/ApiServices';
+import { AuthAPI, UserAPI } from 'services/ApiServices';
 import * as ImagePicker from 'expo-image-picker';
-
+import { uploadProfilePicture } from 'src/utils/uploadImage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -153,17 +157,20 @@ function ChipGroup({ options, value, onChange, error, multi = false }) {
   );
 }
 const chipStyles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.md },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: 35, },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: Spacing.md, paddingVertical: 10,
     borderRadius: Radius.full, borderWidth: 1.5,
     borderColor: '#E5E7EB', backgroundColor: Colors.white,
   },
-  chipActive: { borderColor: Colors.primary, backgroundColor: Colors.backgroundGradientStart },
+  chipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
   icon: { fontSize: 15 },
   label: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.textSecondary },
-  labelActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
+  labelActive: { color: Colors.white, fontWeight: FontWeight.semibold },
   error: { fontSize: FontSize.xs, color: '#EF4444', marginBottom: Spacing.sm },
 });
  
@@ -187,9 +194,11 @@ const sectionStyles = StyleSheet.create({
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RegisterScreen({ navigation }) {
-  const { loginWithToken } = useAuth();
+  const { loginWithToken, updateUser } = useAuth();
   const [step, setStep]       = useState(1);
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
+  
  
   // Step 1
   const step1 = useForm(
@@ -275,35 +284,34 @@ export default function RegisterScreen({ navigation }) {
     goNext();
   };
  
+  // ── Image picker ───────────────────────────────────────────────────────────
+  const MEDIA_LIMITS = { maxPhotos: 6, maxVideoSeconds: 30 };
+  
+  const PICKER_OPTIONS = {
+    allowsEditing:  true,       // enables crop UI
+    aspect:         [4, 5],     // portrait ratio — better for profile photos
+    quality:        0.85,
+    allowsMultipleSelection: false,
+  };
 
 
-  // ── Image picker ──────────────────────────────────────────────────────
   const pickFromGallery = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Please go to Settings and allow HeartLink to access your photo library.',
-          [{ text: 'OK' }]
-        );
+        Alert.alert('Permission Required', 'Please allow access to your photo library.');
         return;
       }
-  
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],          // ✅ Updated API
+        mediaTypes:    ['images'],   // ← fixed
         allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
+        aspect:        [4, 5],
+        quality:       0.85,
       });
-  
-      console.log('Gallery result:', result);  // ✅ Debug log
-  
       if (!result.canceled && result.assets?.length > 0) {
         setPhoto(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Gallery error:', error);  // ✅ Log the actual error
       Alert.alert('Error', 'Could not open photo library. Please try again.');
     }
   };
@@ -312,35 +320,51 @@ export default function RegisterScreen({ navigation }) {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Please go to Settings and allow HeartLink to access your camera.',
-          [{ text: 'OK' }]
-        );
+        Alert.alert('Permission Required', 'Please allow access to your camera.');
         return;
       }
-  
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],          // ✅ Add this here too
+        mediaTypes:    ['images'],   // ← fixed
         allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
+        aspect:        [4, 5],
+        quality:       0.85,
       });
-  
-      console.log('Camera result:', result);   // ✅ Debug log
-  
       if (!result.canceled && result.assets?.length > 0) {
         setPhoto(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Camera error:', error);   // ✅ Log the actual error
       Alert.alert('Error', 'Could not open camera. Please try again.');
     }
   };
+
+  // ── Agreement modal state ─────────────────────────────────────────────────
+  const [showAgreementModal, setShowAgreementModal] = useState(false);
+  const [agreed, setAgreed] = useState({
+    accurate:   false,
+    suspension: false,
+    terms:      false,
+    guidelines: false,
+    age:        false,
+  });
+
+  const allAgreed = Object.values(agreed).every(Boolean);
+
+  const toggleAgreed = (key) =>
+    setAgreed((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // Opens the modal instead of registering directly
+  const handleCreateAccountPress = () => {
+    // Reset checkboxes each time modal opens
+    setAgreed({ accurate: false, suspension: false, terms: false, guidelines: false, age: false });
+    setShowAgreementModal(true);
+  };
+
   // ── Final submit ──────────────────────────────────────────────────────────
   const handleRegister = async () => {
+    setShowAgreementModal(false);
     setLoading(true);
     try {
+      // Step 1: Register user WITHOUT photo first
       const payload = {
         name:             step1.values.name.trim(),
         email:            step1.values.email.trim().toLowerCase(),
@@ -365,31 +389,49 @@ export default function RegisterScreen({ navigation }) {
           kidsAges:     kidsAges.length ? kidsAges : undefined,
         }),
       };
- 
-      console.log('📤 Registering:', { ...payload, password: '***' });
- 
+   
       const data = await AuthAPI.register(payload);
-      console.log('✅ Registration success');
-      await loginWithToken(data.token, data.user);
- 
+   
+      // Step 2: Upload photo AFTER registration (we now have a token)
+      if (photo) {
+        setUploadProgress('Uploading your photo...');
+        try {
+          await loginWithToken(data.token, data.user);
+          const photoUrl = await uploadProfilePicture(photo);
+          console.log('✅ Profile picture uploaded:', photoUrl);
+      
+          // ← Save URL to backend so it persists after reload
+          await UserAPI.updateProfile({ profilePicture: photoUrl });
+      
+          // ← Update local auth state so profile screen shows it immediately
+          updateUser({ profilePicture: photoUrl });
+      
+        } catch (uploadErr) {
+          // Photo upload failed — user is still registered, just without photo
+          console.log('⚠️ Photo upload failed:', uploadErr.message);
+          Alert.alert(
+            'Almost done!',
+            'Your account was created successfully, but we could not upload your photo. You can add it later from your profile.',
+            [{ text: 'OK' }]
+          );
+        }
+      } else {
+        // No photo — just log in
+        await loginWithToken(data.token, data.user);
+      }
+   
     } catch (err) {
-      console.log('❌ Registration error:', err);
-      // Show the RAW error message so we can diagnose the real issue
-      const message = err.message || 'Registration failed. Please try again.';
-      console.log('❌ [RegisterScreen] Error:', message);
- 
+      let message = err.message || 'Registration failed. Please try again.';
       if (message.toLowerCase().includes('already')) {
+        message = 'This email or phone number is already registered. Please log in instead.';
         setStep(1);
       }
- 
       Alert.alert('Registration Failed', message);
     } finally {
       setLoading(false);
+      setUploadProgress('');
     }
   };
-
-  
- 
   // ─────────────────────────────────────────────────────────────────────────
   // Step renderers
   // ─────────────────────────────────────────────────────────────────────────
@@ -525,33 +567,74 @@ export default function RegisterScreen({ navigation }) {
       case 9:
         return (
           <View>
-            <SectionTitle emoji="📸" title="Add your photo" subtitle="Profiles with photos get 5x more matches. You can always add more later." />
- 
+            <SectionTitle
+              emoji="📸"
+              title="Add your photo"
+              subtitle={`Profiles with photos get 5x more matches. Max ${MEDIA_LIMITS.maxPhotos} photos. You can add more later.`}
+            />
+       
             {/* Photo preview */}
-            <TouchableOpacity style={styles.photoBox} onPress={pickFromGallery} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.photoBox}
+              onPress={pickFromGallery}
+              activeOpacity={0.8}
+            >
               {photo ? (
                 <Image source={{ uri: photo }} style={styles.photoPreview} />
               ) : (
                 <View style={styles.photoPlaceholder}>
                   <Text style={styles.photoIcon}>🤳</Text>
                   <Text style={styles.photoPlaceholderText}>Tap to select a photo</Text>
-                  <Text style={styles.photoPlaceholderSub}>JPG or PNG, square works best</Text>
+                  <Text style={styles.photoPlaceholderSub}>Square crop works best (1:1)</Text>
                 </View>
               )}
             </TouchableOpacity>
- 
+       
+            {/* Crop tip — helps users find the crop button */}
+            {photo && (
+              <View style={styles.cropTip}>
+                <Text style={styles.cropTipText}>
+                  💡 Tip: When selecting a photo, use the{' '}
+                  <Text style={styles.cropTipBold}>crop/edit handles</Text> to adjust,
+                  then tap <Text style={styles.cropTipBold}>"Choose"</Text> or{' '}
+                  <Text style={styles.cropTipBold}>"Done"</Text> to confirm.
+                </Text>
+              </View>
+            )}
+       
+            {/* Upload progress */}
+            {uploadProgress ? (
+              <View style={styles.uploadProgressBox}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.uploadProgressText}>{uploadProgress}</Text>
+              </View>
+            ) : null}
+       
             {/* Action buttons */}
             <View style={styles.photoActions}>
-              <TouchableOpacity style={styles.photoBtn} onPress={pickFromGallery} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.photoBtn}
+                onPress={pickFromGallery}
+                activeOpacity={0.8}
+              >
                 <Text style={styles.photoBtnIcon}>🖼️</Text>
                 <Text style={styles.photoBtnText}>Gallery</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.photoBtn} onPress={pickFromCamera} activeOpacity={0.8}>
+       
+              <TouchableOpacity
+                style={styles.photoBtn}
+                onPress={pickFromCamera}
+                activeOpacity={0.8}
+              >
                 <Text style={styles.photoBtnIcon}>📷</Text>
                 <Text style={styles.photoBtnText}>Camera</Text>
               </TouchableOpacity>
+       
               {photo && (
-                <TouchableOpacity style={[styles.photoBtn, styles.photoBtnRemove]} onPress={() => setPhoto(null)}>
+                <TouchableOpacity
+                  style={[styles.photoBtn, styles.photoBtnRemove]}
+                  onPress={() => setPhoto(null)}
+                >
                   <Text style={styles.photoBtnIcon}>🗑️</Text>
                   <Text style={[styles.photoBtnText, { color: '#EF4444' }]}>Remove</Text>
                 </TouchableOpacity>
@@ -593,7 +676,7 @@ export default function RegisterScreen({ navigation }) {
         {/* CTA */}
         <Button
           title={isLastStep ? 'Create Account  ♥' : 'Continue →'}
-          onPress={isLastStep ? handleRegister : handleNext}
+          onPress={isLastStep ? handleCreateAccountPress : handleNext}
           loading={loading}
           size="lg"
           style={styles.actionBtn}
@@ -606,7 +689,7 @@ export default function RegisterScreen({ navigation }) {
           </TouchableOpacity>
         )}
         {isLastStep && (
-          <TouchableOpacity style={styles.skipBtn} onPress={handleRegister}>
+          <TouchableOpacity style={styles.skipBtn} onPress={handleCreateAccountPress}>
             <Text style={styles.skipText}>Skip — add photo later</Text>
           </TouchableOpacity>
         )}
@@ -620,12 +703,224 @@ export default function RegisterScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         )}
-
       </ScrollView>
+
+      {/* ── Agreement Modal ────────────────────────────────────────────── */}
+      <Modal
+        visible={showAgreementModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAgreementModal(false)}
+      >
+      .;/
+        <View style={agreementStyles.overlay}>
+          <View style={agreementStyles.sheet}>
+
+            {/* Header */}
+            <View style={agreementStyles.header}>
+              <Text style={agreementStyles.headerEmoji}>📋</Text>
+              <Text style={agreementStyles.headerTitle}>Before You Join</Text>
+              <Text style={agreementStyles.headerSub}>
+                Please read and agree to the following before creating your account.
+              </Text>
+            </View>
+
+            <ScrollView
+              style={agreementStyles.scroll}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 8 }}
+            >
+              {/* Condition 1 */}
+              <AgreementItem
+                checked={agreed.accurate}
+                onToggle={() => toggleAgreed('accurate')}
+                text="I confirm that all the information I have provided is accurate, real, and truly represents who I am. I understand that providing false information is a violation of HeartLink's policies."
+              />
+
+              {/* Condition 2 */}
+              <AgreementItem
+                checked={agreed.age}
+                onToggle={() => toggleAgreed('age')}
+                text="I confirm that I am at least 18 years of age. HeartLink is strictly for adults, and creating an account on behalf of a minor is prohibited."
+              />
+
+              {/* Condition 3 */}
+              <AgreementItem
+                checked={agreed.suspension}
+                onToggle={() => toggleAgreed('suspension')}
+                text="I understand that my account may be suspended or permanently removed if it is reported by multiple users for fake profiles, impersonation, harassment, sending inappropriate content, or any form of abusive behaviour."
+              />
+
+              {/* Condition 4 */}
+              <AgreementItem
+                checked={agreed.guidelines}
+                onToggle={() => toggleAgreed('guidelines')}
+                text="I agree to treat all HeartLink members with respect and dignity. I will not send unsolicited explicit content, engage in hate speech, bullying, or any behaviour that makes others feel unsafe."
+              />
+
+              {/* Condition 5 */}
+              <AgreementItem
+                checked={agreed.terms}
+                onToggle={() => toggleAgreed('terms')}
+                text={null}
+                customText={
+                  <Text style={agreementStyles.itemText}>
+                    I have read and agree to HeartLink's{' '}
+                    <Text
+                      style={agreementStyles.link}
+                      onPress={() => Linking.openURL('https://heartlink.app/terms')}
+                    >
+                      Terms & Conditions
+                    </Text>
+                    {' '}and{' '}
+                    <Text
+                      style={agreementStyles.link}
+                      onPress={() => Linking.openURL('https://heartlink.app/privacy')}
+                    >
+                      Privacy Policy
+                    </Text>
+                    .
+                  </Text>
+                }
+              />
+            </ScrollView>
+
+            {/* Actions */}
+            <View style={agreementStyles.actions}>
+              <TouchableOpacity
+                style={[agreementStyles.agreeBtn, !allAgreed && agreementStyles.agreeBtnDisabled]}
+                onPress={handleRegister}
+                disabled={!allAgreed || loading}
+                activeOpacity={0.85}
+              >
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={agreementStyles.agreeBtnText}>
+                      {allAgreed ? 'Agree & Create Account ♥' : `Agree to all (${Object.values(agreed).filter(Boolean).length}/5)`}
+                    </Text>
+                }
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={agreementStyles.cancelBtn}
+                onPress={() => setShowAgreementModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={agreementStyles.cancelBtnText}>Go Back</Text>
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </Modal>
+
     </KeyboardAvoidingView>
   );
 }
- 
+
+// ── Agreement checkbox item ────────────────────────────────────────────────────
+function AgreementItem({ checked, onToggle, text, customText }) {
+  return (
+    <TouchableOpacity style={agreementStyles.item} onPress={onToggle} activeOpacity={0.7}>
+      <View style={[agreementStyles.checkbox, checked && agreementStyles.checkboxChecked]}>
+        {checked && <Text style={agreementStyles.checkmark}>✓</Text>}
+      </View>
+      {customText
+        ? customText
+        : <Text style={agreementStyles.itemText}>{text}</Text>
+      }
+    </TouchableOpacity>
+  );
+}
+
+const agreementStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    maxHeight: '90%',
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  headerEmoji: { fontSize: 36, marginBottom: 8 },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#2D3436',
+    marginBottom: 6,
+    letterSpacing: -0.3,
+  },
+  headerSub: {
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  scroll: { flexGrow: 0 },
+  item: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 16,
+    paddingVertical: 4,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  checkboxChecked: {
+    backgroundColor: '#FF4B7A',
+    borderColor: '#FF4B7A',
+  },
+  checkmark: { fontSize: 13, color: '#fff', fontWeight: '700' },
+  itemText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 20,
+  },
+  link: {
+    color: '#FF4B7A',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  actions: { marginTop: 16, gap: 10 },
+  agreeBtn: {
+    backgroundColor: '#FF4B7A',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  agreeBtnDisabled: { backgroundColor: '#FFB8CC' },
+  agreeBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  cancelBtn: {
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  cancelBtnText: { color: '#6B7280', fontSize: 15, fontWeight: '600' },
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scroll: { flexGrow: 1, paddingHorizontal: Spacing.lg, paddingTop: 52, paddingBottom: 40 },
@@ -636,7 +931,7 @@ const styles = StyleSheet.create({
   stepHeader: { marginBottom: Spacing.lg },
   stepCount: { fontSize: FontSize.sm, color: Colors.textLight, marginBottom: 8, fontWeight: FontWeight.medium },
  
-  fieldLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.text, marginBottom: Spacing.sm },
+  fieldLabel: { fontSize: 18, FontWeight: FontWeight.semibold, color: Colors.text, marginBottom:16 },
   charCount: { fontSize: FontSize.xs, color: Colors.textLight, textAlign: 'right', marginTop: -Spacing.sm, marginBottom: Spacing.md },
  
   // Profession hint
@@ -652,7 +947,7 @@ const styles = StyleSheet.create({
   professionHintText: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
   professionExample: { color: Colors.primary, fontWeight: FontWeight.semibold },
  
-  actionBtn: { width: '100%', marginTop: Spacing.lg },
+  actionBtn: { width: '100%', marginTop: Spacing.lg, marginBottom: 10 },
   skipBtn: { alignSelf: 'center', paddingVertical: Spacing.sm, marginTop: Spacing.xs },
   skipText: { fontSize: FontSize.sm, color: Colors.textLight },
  
@@ -681,4 +976,35 @@ const styles = StyleSheet.create({
   photoBtnRemove: { borderColor: '#FEE2E2', backgroundColor: '#FFF5F5' },
   photoBtnIcon: { fontSize: 18 },
   photoBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.text },
+  cropTip: {
+    backgroundColor: '#F0F9FF',
+    borderRadius: 10,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  cropTipText: {
+    fontSize: FontSize.sm,
+    color: '#0369A1',
+    lineHeight: 20,
+  },
+  cropTipBold: {
+    fontWeight: FontWeight.bold,
+    color: '#0369A1',
+  },
+  uploadProgressBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.backgroundGradientStart,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  uploadProgressText: {
+    fontSize: FontSize.sm,
+    color: Colors.primary,
+    fontWeight: FontWeight.medium,
+  },
 });

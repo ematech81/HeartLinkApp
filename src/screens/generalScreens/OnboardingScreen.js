@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     color: Colors.text,
     textAlign: 'center',
     lineHeight: 38,
-    marginBottom: Spacing.md,
+    marginBottom: 7,
     letterSpacing: -0.3,
   },
   subtitle: {
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   nextBtn: {
     width: '100%',
     backgroundColor: Colors.primary,
-    paddingVertical: 18,
+    paddingVertical: 10,
     borderRadius: Radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
@@ -291,7 +291,9 @@ const styles = StyleSheet.create({
     fontSize: FontSize.md,
   },
   skipBtn: {
-    paddingVertical: Spacing.xs,
+    paddingVertical:0,
+    marginBottom:10,
+    // backgroundColor: '#0000'
   },
   skipText: {
     fontSize: FontSize.base,

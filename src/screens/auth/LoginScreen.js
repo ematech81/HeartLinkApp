@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
   },
   socialText: { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: Colors.text },
  
-  registerRow: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.md },
+  registerRow: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.md , marginBottom: 50},
   registerText: { fontSize: FontSize.base, color: Colors.textSecondary },
   registerLink: { fontSize: FontSize.base, color: Colors.primary, fontWeight: FontWeight.semibold },
 });

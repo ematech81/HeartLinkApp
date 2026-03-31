@@ -24,7 +24,9 @@
       "package": "com.anonymous.heartlinkapp",
       "permissions": [
         "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "READ_MEDIA_IMAGES",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -37,6 +39,12 @@
         {
           "photosPermission": "HeartLink needs access to your photos to set your profile picture.",
           "cameraPermission": "HeartLink needs access to your camera to take a profile photo."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "HeartLink needs your location to show nearby matches."
         }
       ],
       "expo-web-browser"

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -8,6 +8,12 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Routes } from 'src/constants/appConstants';
 import Colors from 'src/constants/Colors';
+import SocketService from 'services/socketService';
+import {
+  registerForPushNotifications,
+  setupNotificationListeners,
+  clearBadge,
+} from 'src/services/notificationService';
 
 
 import SplashScreen from 'screen/generalScreens/SplashScreen';
@@ -27,6 +33,9 @@ import ProfileScreen  from 'src/screens/main/ProfileScreen';
 import { useAuth } from 'src/store/authStore';
 import OTPScreen from 'src/screens/auth/OtpScreen';
 import ChatScreen from 'screen/main/ChatScreen';
+import UserProfileScreen from 'screen/main/UserProfileScreen';
+import MatchScreen from 'screen/generalScreens/MatchScreen';
+import EditProfileScreen from 'screen/main/EditProfileScreen';
 // import ChatScreen from 'src/screens/main/ChatScreen';
 
 
@@ -50,7 +59,7 @@ function MainTabs() {
 
   const tabs = [
     { name: Routes.HOME,     component: HomeScreen,     label: 'Home',     icon: '🏠' },
-    // { name: Routes.DISCOVER, component: DiscoverScreen, label: 'Discover', icon: '🔍' },
+    { name: Routes.DISCOVER, component: DiscoverScreen, label: 'Discover', icon: '🔍' },
     { name: Routes.MATCHES,  component: MatchesScreen,  label: 'Matches',  icon: '💕' },
     { name: Routes.MESSAGES, component: MessagesScreen, label: 'Messages', icon: '💬' },
     { name: Routes.PROFILE,  component: ProfileScreen,  label: 'Profile',  icon: '👤' },
@@ -92,11 +101,30 @@ function MainTabs() {
 
 // ── Root navigator ────────────────────────────────────────────────────────
 export default function AppNavigator() {
-  const { isAuthenticated, isInitializing } = useAuth();
+  const { isAuthenticated, isInitializing, user } = useAuth();
+  const navigationRef = useRef(null);
+
+  // ── Connect/disconnect socket with auth state ─────────────────────────────
+  useEffect(() => {
+    if (isAuthenticated && user?._id) {
+      SocketService.connect(user._id);
+    } else {
+      SocketService.disconnect();
+    }
+  }, [isAuthenticated, user?._id]);
+
+  // ── Register push notifications when user logs in ─────────────────────────
+  useEffect(() => {
+    if (!isAuthenticated || !user?._id) return;
+    registerForPushNotifications();
+    clearBadge();
+    const unsubscribe = setupNotificationListeners(navigationRef.current);
+    return unsubscribe;
+  }, [isAuthenticated, user?._id]);
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isInitializing ? (
             <Stack.Screen name="Initializing" component={InitializingScreen} />
@@ -105,7 +133,16 @@ export default function AppNavigator() {
             <>
               <Stack.Screen name={Routes.MAIN} component={MainTabs} />
               <Stack.Screen name={Routes.CHAT} component={ChatScreen} />
-              {/* Add other authenticated-only screens here */}
+              <Stack.Screen name={Routes.USER_PROFILE} component={UserProfileScreen} />
+              <Stack.Screen
+             name="MatchScreen"
+             component={MatchScreen}
+             options={{
+             presentation: 'transparentModal',  // ← overlays everything
+             animation:    'fade',
+             headerShown:  false,
+             }}/>
+              <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             </>
           ) : (
             <>

@@ -156,7 +156,11 @@ export function AuthProvider({ children }) {
  
   // ── Update user locally ───────────────────────────────────────────────────
   const updateUser = async (updates) => {
-    const updated = { ...state.user, ...updates };
+    // Read current user from AsyncStorage to avoid stale closure issues
+    // (e.g. when called right after loginWithToken before re-render)
+    const userRaw    = await AsyncStorage.getItem(StorageKeys.USER);
+    const current    = userRaw ? JSON.parse(userRaw) : (state.user || {});
+    const updated    = { ...current, ...updates };
     await AsyncStorage.setItem(StorageKeys.USER, JSON.stringify(updated));
     dispatch({ type: UPDATE_USER, payload: updates });
   };

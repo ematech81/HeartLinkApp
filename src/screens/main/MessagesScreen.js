@@ -223,6 +223,11 @@ export default function MessagesScreen({ navigation }) {
     });
   };
 
+    const handleGoback = () => {
+      // Go back to Home tab
+      navigation.navigate(Routes.HOME);
+    };
+
   const openChatFromStory = (match) => {
     navigation.navigate(Routes.CHAT, {
       userId:    match.user._id,
@@ -239,7 +244,7 @@ export default function MessagesScreen({ navigation }) {
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.headerBtn} onPress={handleGoback}>
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
 
