@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, Image, StyleSheet, ScrollView,
   TouchableOpacity, ActivityIndicator, StatusBar,
-  Dimensions, FlatList, Platform,
+  Dimensions, FlatList, Platform, Modal, Alert,
 } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,8 @@ import Colors from 'src/constants/Colors';
 import { Spacing, Radius } from 'src/constants/layout';
 import { FontSize, FontWeight } from 'src/constants/topography';
 import { useAuth } from 'src/store/authStore';
+import { PaymentAPI } from 'services/ApiServices';
+import PaystackWebView from 'src/components/PaystackWebView';
 
 const { width: W } = Dimensions.get('window');
 const HERO_H = W * 1.05;
@@ -20,7 +22,9 @@ const getAge = (dob) =>
 const capitalize = (str) =>
   str ? str.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '';
 
-// ── Info card (Status / Profession) ──────────────────────────────────────────
+const stillActive = (expiry) => expiry && new Date(expiry) > new Date();
+
+// ── Info card ─────────────────────────────────────────────────────────────────
 function InfoCard({ icon, label, value }) {
   if (!value) return null;
   return (
@@ -44,23 +48,113 @@ function SectionHeading({ icon, title }) {
   );
 }
 
+// ── Boost Modal ───────────────────────────────────────────────────────────────
+function BoostModal({ visible, onClose, onBoost, loading, alreadyBoosted, boostExpiry }) {
+  const daysLeft = boostExpiry
+    ? Math.ceil((new Date(boostExpiry) - new Date()) / (1000 * 60 * 60 * 24))
+    : 0;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableOpacity style={boostStyles.backdrop} activeOpacity={1} onPress={onClose} />
+      <View style={boostStyles.sheet}>
+        <View style={boostStyles.handle} />
+
+        <Text style={boostStyles.icon}>⚡</Text>
+        <Text style={boostStyles.title}>Boost Your Profile</Text>
+
+        {alreadyBoosted && daysLeft > 0 ? (
+          <View style={boostStyles.activeRow}>
+            <Text style={boostStyles.activeBadge}>⚡ Active — {daysLeft} day{daysLeft !== 1 ? 's' : ''} left</Text>
+          </View>
+        ) : null}
+
+        <View style={boostStyles.benefitsBox}>
+          {[
+            '📍 Appear at the top of search results',
+            '💙 Blue verified badge on your profile',
+            '👀 Get 10× more profile views',
+            '🔥 Featured in Top Profiles across the app',
+          ].map((line, i) => (
+            <Text key={i} style={boostStyles.benefitLine}>{line}</Text>
+          ))}
+        </View>
+
+        <View style={boostStyles.priceRow}>
+          <Text style={boostStyles.price}>₦3,000</Text>
+          <Text style={boostStyles.pricePer}> / week</Text>
+        </View>
+
+        <TouchableOpacity
+          style={[boostStyles.boostBtn, loading && { opacity: 0.7 }]}
+          onPress={onBoost}
+          disabled={loading}
+          activeOpacity={0.85}
+        >
+          {loading
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={boostStyles.boostBtnText}>
+                {alreadyBoosted ? '⚡  Boost Again' : '⚡  Boost Now — ₦3,000'}
+              </Text>
+          }
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onClose} style={boostStyles.cancelBtn}>
+          <Text style={boostStyles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+}
+
+const boostStyles = StyleSheet.create({
+  backdrop:    { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28, paddingTop: 12,
+    alignItems: 'center',
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.12, shadowRadius: 16 }, android: { elevation: 24 } }),
+  },
+  handle:    { width: 44, height: 4, borderRadius: 2, backgroundColor: '#E0E0E0', marginBottom: 20 },
+  icon:      { fontSize: 44, marginBottom: 6 },
+  title:     { fontSize: 22, fontWeight: '800', color: '#2D3436', marginBottom: 12 },
+  activeRow: { marginBottom: 10 },
+  activeBadge: { backgroundColor: '#EBF8FF', color: '#3498DB', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, fontWeight: '700', fontSize: 13 },
+  benefitsBox: { width: '100%', backgroundColor: '#F9FAFB', borderRadius: 14, padding: 16, marginBottom: 18, gap: 8 },
+  benefitLine: { fontSize: 14, color: '#444', lineHeight: 22 },
+  priceRow:  { flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 },
+  price:     { fontSize: 30, fontWeight: '800', color: '#3498DB' },
+  pricePer:  { fontSize: 15, color: '#888' },
+  boostBtn: {
+    width: '100%', height: 52, borderRadius: 26, backgroundColor: '#3498DB',
+    alignItems: 'center', justifyContent: 'center', marginTop: 14,
+    ...Platform.select({ ios: { shadowColor: '#3498DB', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 10 }, android: { elevation: 6 } }),
+  },
+  boostBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  cancelBtn:    { marginTop: 12, paddingVertical: 8 },
+  cancelText:   { fontSize: 14, color: '#A0A0A0' },
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ProfileScreen({ navigation }) {
-  const insets       = useSafeAreaInsets();
-  const { user }     = useAuth();
+  const insets           = useSafeAreaInsets();
+  const { user, updateUser } = useAuth();
 
-  const [activeTab,  setActiveTab]  = useState('about');
-  const [photoIndex, setPhotoIndex] = useState(0);
+  const [activeTab,    setActiveTab]    = useState('about');
+  const [photoIndex,   setPhotoIndex]   = useState(0);
   const [videoPlaying, setVideoPlaying] = useState(false);
+  const [showBoost,    setShowBoost]    = useState(false);
+  const [boostLoading, setBoostLoading] = useState(false);
   const videoRef = useRef(null);
 
-  // Re-sync when coming back from EditProfileScreen
+  // Paystack checkout state for boost
+  const [boostPaystackUrl, setBoostPaystackUrl] = useState(null);
+  const [boostTxRef,       setBoostTxRef]       = useState(null);
+  const [showBoostPaystack, setShowBoostPaystack] = useState(false);
+
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      // user is already updated via updateUser() in EditProfileScreen
-      // just reset photo index
-      setPhotoIndex(0);
-    });
+    const unsubscribe = navigation.addListener('focus', () => setPhotoIndex(0));
     return unsubscribe;
   }, [navigation]);
 
@@ -73,8 +167,9 @@ export default function ProfileScreen({ navigation }) {
   }
 
   const age = user.age || getAge(user.dateOfBirth);
+  const isBoosted     = !!(user.isBoosted    && stillActive(user.boostExpiry));
+  const isSubscribed  = !!(user.isSubscribed && stillActive(user.subscriptionExpiry));
 
-  // Build media list — profile pic + gallery photos
   const allMedia = [
     user.profilePicture,
     ...(Array.isArray(user.photos) ? user.photos : []),
@@ -93,12 +188,46 @@ export default function ProfileScreen({ navigation }) {
 
   const toggleVideo = async () => {
     if (!videoRef.current) return;
-    if (videoPlaying) {
-      await videoRef.current.pauseAsync();
-    } else {
-      await videoRef.current.playAsync();
-    }
+    if (videoPlaying) await videoRef.current.pauseAsync();
+    else              await videoRef.current.playAsync();
     setVideoPlaying(!videoPlaying);
+  };
+
+  // Step 1: Initialize Paystack transaction for boost
+  const handleBoost = async () => {
+    setBoostLoading(true);
+    try {
+      const data = await PaymentAPI.initializePayment('boost');
+      setBoostPaystackUrl(data.authorization_url);
+      setBoostTxRef(data.reference);
+      setShowBoost(false);
+      setShowBoostPaystack(true);
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not start payment. Please try again.');
+    } finally {
+      setBoostLoading(false);
+    }
+  };
+
+  // Step 2: Paystack callback — verify and activate boost
+  const handleBoostPaystackSuccess = async (reference) => {
+    setShowBoostPaystack(false);
+    setBoostLoading(true);
+    try {
+      const data = await PaymentAPI.verifyPayment(reference, 'boost');
+      await updateUser({
+        isBoosted:   true,
+        boostExpiry: data.boostExpiry,
+        isVerified:  true,
+      });
+      Alert.alert('⚡ Profile Boosted!', 'Your profile is now featured at the top for 7 days.', [{ text: 'Awesome!' }]);
+    } catch {
+      Alert.alert('Verification Failed', 'Payment received but we could not confirm it yet. Restart the app to sync.');
+    } finally {
+      setBoostLoading(false);
+      setBoostPaystackUrl(null);
+      setBoostTxRef(null);
+    }
   };
 
   return (
@@ -107,12 +236,14 @@ export default function ProfileScreen({ navigation }) {
 
       {/* ── Header ──────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <View style={{ width: 36 }} />
-        <Text style={styles.headerTitle}>  {user?.name?.split(' ')[0]}'s Profile </Text>
-        <TouchableOpacity
-          style={styles.menuBtn}
-          onPress={() => navigation.navigate('EditProfile')}
-        >
+        {/* Back button */}
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.headerTitle}>{user?.name?.split(' ')[0]}'s Profile</Text>
+
+        <TouchableOpacity style={styles.menuBtn} onPress={() => navigation.navigate('EditProfile')}>
           <Text style={styles.menuBtnText}>⋮</Text>
         </TouchableOpacity>
       </View>
@@ -133,8 +264,6 @@ export default function ProfileScreen({ navigation }) {
             scrollEventThrottle={16}
             bounces={false}
           />
-
-          {/* Dot indicators */}
           {allMedia.length > 1 && (
             <View style={styles.dotsRow}>
               {allMedia.map((_, i) => (
@@ -158,12 +287,24 @@ export default function ProfileScreen({ navigation }) {
               </View>
               {(user.profession || user.city) && (
                 <Text style={styles.userProfession}>
-                  {[user.profession, user.city].filter(Boolean).join(' based in ')}
+                  {[user.profession, user.city].filter(Boolean).join(' · ')}
                 </Text>
               )}
+              {/* Subscription / Boost status pills */}
+              <View style={styles.statusPills}>
+                {isSubscribed && (
+                  <View style={[styles.statusPill, styles.pillSub]}>
+                    <Text style={styles.pillText}>👑 Premium</Text>
+                  </View>
+                )}
+                {isBoosted && (
+                  <View style={[styles.statusPill, styles.pillBoost]}>
+                    <Text style={styles.pillText}>⚡ Boosted</Text>
+                  </View>
+                )}
+              </View>
             </View>
 
-            {/* Distance badge */}
             {user.distanceKm && (
               <View style={styles.distanceBadge}>
                 <Text style={styles.distanceBadgeText}>{user.distanceKm}</Text>
@@ -172,13 +313,24 @@ export default function ProfileScreen({ navigation }) {
             )}
           </View>
 
-          {/* Edit Profile button */}
+          {/* ── Edit Profile — prominent ─────────────────────────── */}
           <TouchableOpacity
             style={styles.editProfileBtn}
             onPress={() => navigation.navigate('EditProfile')}
             activeOpacity={0.85}
           >
             <Text style={styles.editProfileBtnText}>✎  Edit Profile</Text>
+          </TouchableOpacity>
+
+          {/* ── Boost button ─────────────────────────────────────── */}
+          <TouchableOpacity
+            style={styles.boostProfileBtn}
+            onPress={() => setShowBoost(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.boostProfileBtnText}>
+              {isBoosted ? '⚡  Boost Again' : '⚡  Boost Your Account'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -199,8 +351,6 @@ export default function ProfileScreen({ navigation }) {
 
         {activeTab === 'about' ? (
           <View style={styles.content}>
-
-            {/* Bio */}
             {!!user.bio && (
               <View style={styles.contentSection}>
                 <SectionHeading icon="👤" title="Bio" />
@@ -208,26 +358,18 @@ export default function ProfileScreen({ navigation }) {
               </View>
             )}
 
-            {/* 30-Second Intro Video */}
             {user.introVideo && (
               <View style={styles.contentSection}>
                 <SectionHeading icon="🎬" title="30-Second Intro" />
-                <TouchableOpacity
-                  style={styles.videoWrapper}
-                  onPress={toggleVideo}
-                  activeOpacity={0.95}
-                >
+                <TouchableOpacity style={styles.videoWrapper} onPress={toggleVideo} activeOpacity={0.95}>
                   <Video
                     ref={videoRef}
                     source={{ uri: user.introVideo }}
                     style={styles.video}
                     resizeMode={ResizeMode.COVER}
                     isLooping={false}
-                    onPlaybackStatusUpdate={(s) => {
-                      if (s.isLoaded) setVideoPlaying(s.isPlaying);
-                    }}
+                    onPlaybackStatusUpdate={(s) => { if (s.isLoaded) setVideoPlaying(s.isPlaying); }}
                   />
-                  {/* Play/pause overlay */}
                   {!videoPlaying && (
                     <View style={styles.playOverlay}>
                       <View style={styles.playCircle}>
@@ -235,7 +377,6 @@ export default function ProfileScreen({ navigation }) {
                       </View>
                     </View>
                   )}
-                  {/* Duration badge */}
                   <View style={styles.durationBadge}>
                     <Text style={styles.durationText}>0:30</Text>
                   </View>
@@ -243,19 +384,13 @@ export default function ProfileScreen({ navigation }) {
               </View>
             )}
 
-            {/* Status + Profession cards */}
             {(user.relationshipType || user.profession) && (
               <View style={styles.infoCardsRow}>
-                {user.relationshipType && (
-                  <InfoCard icon="👫" label="STATUS"     value={user.relationshipType} />
-                )}
-                {user.profession && (
-                  <InfoCard icon="💼" label="PROFESSION" value={user.profession} />
-                )}
+                {user.relationshipType && <InfoCard icon="👫" label="STATUS"     value={user.relationshipType} />}
+                {user.profession       && <InfoCard icon="💼" label="PROFESSION" value={user.profession} />}
               </View>
             )}
 
-            {/* Interests */}
             {user.interests?.length > 0 && (
               <View style={styles.contentSection}>
                 <SectionHeading icon="♥" title="Interests" />
@@ -269,11 +404,9 @@ export default function ProfileScreen({ navigation }) {
               </View>
             )}
 
-            {/* Location */}
             {(user.city || user.country) && (
               <View style={styles.contentSection}>
                 <SectionHeading icon="📍" title="Location" />
-                {/* Map placeholder */}
                 <View style={styles.mapPlaceholder}>
                   <View style={styles.mapPin}>
                     <Text style={styles.mapPinIcon}>📍</Text>
@@ -286,7 +419,6 @@ export default function ProfileScreen({ navigation }) {
               </View>
             )}
 
-            {/* More details */}
             {(user.education || user.religion || user.drink || user.smoke) && (
               <View style={styles.contentSection}>
                 <SectionHeading icon="ℹ️" title="More Details" />
@@ -320,7 +452,6 @@ export default function ProfileScreen({ navigation }) {
             )}
           </View>
         ) : (
-          // Activity tab — placeholder for now
           <View style={styles.activityPlaceholder}>
             <Text style={styles.activityEmoji}>📊</Text>
             <Text style={styles.activityTitle}>Activity</Text>
@@ -330,6 +461,31 @@ export default function ProfileScreen({ navigation }) {
           </View>
         )}
       </ScrollView>
+
+      {/* ── Boost Modal ───────────────────────────────────────────── */}
+      <BoostModal
+        visible={showBoost}
+        onClose={() => setShowBoost(false)}
+        onBoost={handleBoost}
+        loading={boostLoading}
+        alreadyBoosted={isBoosted}
+        boostExpiry={user.boostExpiry}
+      />
+
+      {/* ── Paystack checkout for boost ────────────────────────────── */}
+      {showBoostPaystack && boostPaystackUrl && (
+        <PaystackWebView
+          visible={showBoostPaystack}
+          authorizationUrl={boostPaystackUrl}
+          reference={boostTxRef}
+          onSuccess={handleBoostPaystackSuccess}
+          onCancel={() => {
+            setShowBoostPaystack(false);
+            setBoostPaystackUrl(null);
+            setBoostTxRef(null);
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -338,20 +494,25 @@ const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#F9FAFB' },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  // Header
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: 12, backgroundColor: '#F9FAFB' },
+  // ── Header ─────────────────────────────────────────────────────────────────
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg, paddingVertical: 12, backgroundColor: '#F9FAFB',
+  },
+  backBtn:     { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: '#FFF0F3' },
+  backArrow:   { fontSize: 22, color: Colors.primary, fontWeight: FontWeight.bold },
   headerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
   menuBtn:     { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   menuBtnText: { fontSize: 22, color: Colors.text, fontWeight: FontWeight.bold },
 
-  // Hero
-  heroContainer:{ width: W, height: HERO_H, backgroundColor: '#f0f0f0'},
-  heroImage:    { width: W, height: HERO_H },
-  dotsRow:      { position: 'absolute', bottom: 14, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 },
-  dot:          { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.5)' },
-  dotActive:    { width: 20, backgroundColor: '#fff' },
+  // ── Hero ───────────────────────────────────────────────────────────────────
+  heroContainer: { width: W, height: HERO_H, backgroundColor: '#f0f0f0' },
+  heroImage:     { width: W, height: HERO_H },
+  dotsRow:       { position: 'absolute', bottom: 14, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 },
+  dot:           { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.5)' },
+  dotActive:     { width: 20, backgroundColor: '#fff' },
 
-  // Identity
+  // ── Identity ───────────────────────────────────────────────────────────────
   identitySection: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.md, backgroundColor: '#F9FAFB' },
   identityTop:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.md },
   identityLeft:    { flex: 1, marginRight: Spacing.md },
@@ -360,29 +521,50 @@ const styles = StyleSheet.create({
   verifiedIcon:    { width: 22, height: 22, borderRadius: 11, backgroundColor: '#3B82F6', color: '#fff', textAlign: 'center', lineHeight: 22, fontSize: 12, fontWeight: FontWeight.bold, overflow: 'hidden' },
   userProfession:  { fontSize: FontSize.base, color: Colors.primary, fontWeight: FontWeight.medium, lineHeight: 22 },
 
-  distanceBadge:   { backgroundColor: '#FFF0F3', paddingHorizontal: 14, paddingVertical: 10, borderRadius: Radius.lg, alignItems: 'center', borderWidth: 1, borderColor: '#FFB8CC' },
+  statusPills:  { flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' },
+  statusPill:   { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  pillSub:      { backgroundColor: '#FFF0F3', borderWidth: 1, borderColor: '#FFB8CC' },
+  pillBoost:    { backgroundColor: '#EBF8FF', borderWidth: 1, borderColor: '#90CDF4' },
+  pillText:     { fontSize: 11, fontWeight: '700', color: '#444' },
+
+  distanceBadge:    { backgroundColor: '#FFF0F3', paddingHorizontal: 14, paddingVertical: 10, borderRadius: Radius.lg, alignItems: 'center', borderWidth: 1, borderColor: '#FFB8CC' },
   distanceBadgeText:{ fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.primary },
   distanceBadgeSub: { fontSize: FontSize.xs, color: Colors.primary },
 
-  editProfileBtn:  { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E5E7EB', paddingVertical: 12, borderRadius: Radius.full, alignItems: 'center' },
-  editProfileBtnText:{ fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.text },
+  // ── Edit Profile — prominent ───────────────────────────────────────────────
+  editProfileBtn: {
+    backgroundColor: Colors.primary, paddingVertical: 14,
+    borderRadius: Radius.full, alignItems: 'center', marginBottom: 10,
+    ...Platform.select({
+      ios:     { shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+      android: { elevation: 5 },
+    }),
+  },
+  editProfileBtnText: { fontSize: 17, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
 
-  // Tabs
-  tabsContainer: { flexDirection: 'row', marginHorizontal: Spacing.lg, marginBottom: 4, backgroundColor: '#fff', borderRadius: Radius.full, padding: 4, borderWidth: 1, borderColor: '#F3F4F6' },
+  // ── Boost button ───────────────────────────────────────────────────────────
+  boostProfileBtn: {
+    backgroundColor: '#EBF8FF', borderWidth: 2, borderColor: '#3498DB',
+    paddingVertical: 13, borderRadius: Radius.full, alignItems: 'center',
+  },
+  boostProfileBtnText: { fontSize: 15, fontWeight: '700', color: '#3498DB' },
+
+  // ── Tabs ───────────────────────────────────────────────────────────────────
+  tabsContainer: { flexDirection: 'row', marginHorizontal: Spacing.lg, marginBottom: 4, marginTop: Spacing.sm, backgroundColor: '#fff', borderRadius: Radius.full, padding: 4, borderWidth: 1, borderColor: '#F3F4F6' },
   tabBtn:        { flex: 1, paddingVertical: 10, borderRadius: Radius.full, alignItems: 'center' },
   tabBtnActive:  { backgroundColor: '#FFF0F3' },
   tabBtnText:    { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: Colors.textSecondary },
-  tabBtnTextActive:{ color: Colors.primary, fontWeight: FontWeight.bold },
+  tabBtnTextActive: { color: Colors.primary, fontWeight: FontWeight.bold },
 
-  // Content
-  content:       { paddingHorizontal: Spacing.lg },
-  contentSection:{ backgroundColor: '#fff', borderRadius: Radius.lg, padding: Spacing.lg, marginTop: Spacing.md },
-  sectionHeading:{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: Spacing.sm },
+  // ── Content ────────────────────────────────────────────────────────────────
+  content:        { paddingHorizontal: Spacing.lg },
+  contentSection: { backgroundColor: '#fff', borderRadius: Radius.lg, padding: Spacing.lg, marginTop: Spacing.md },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: Spacing.sm },
   sectionHeadingIcon: { fontSize: 18 },
   sectionHeadingText: { fontSize: FontSize.md, fontWeight: FontWeight.bold, color: Colors.text },
-  bioText:       { fontSize: FontSize.base, color: Colors.textSecondary, lineHeight: 24 },
+  bioText: { fontSize: FontSize.base, color: Colors.textSecondary, lineHeight: 24 },
 
-  // Video
+  // ── Video ──────────────────────────────────────────────────────────────────
   videoWrapper:  { borderRadius: Radius.lg, overflow: 'hidden', position: 'relative' },
   video:         { width: '100%', height: 200, backgroundColor: '#000' },
   playOverlay:   { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
@@ -391,42 +573,33 @@ const styles = StyleSheet.create({
   durationBadge: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   durationText:  { fontSize: FontSize.xs, color: '#fff', fontWeight: FontWeight.semibold },
 
-  // Info cards
-  infoCardsRow:  { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
-  infoCard:      { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: '#F3F4F6' },
-  infoCardIcon:  { fontSize: 22 },
-  infoCardLabel: { fontSize: 10, fontWeight: FontWeight.bold, color: Colors.textSecondary, letterSpacing: 0.8 },
-  infoCardValue: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.text, marginTop: 2 },
+  // ── Info cards ─────────────────────────────────────────────────────────────
+  infoCardsRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
+  infoCard:     { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: '#F3F4F6' },
+  infoCardIcon: { fontSize: 22 },
+  infoCardLabel:{ fontSize: 10, fontWeight: FontWeight.bold, color: Colors.textSecondary, letterSpacing: 0.8 },
+  infoCardValue:{ fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.text, marginTop: 2 },
 
-  // Interests
+  // ── Interests ──────────────────────────────────────────────────────────────
   interestsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   interestChip:  { paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radius.full, backgroundColor: '#F3F4F6' },
   interestText:  { fontSize: FontSize.sm, color: Colors.text, fontWeight: FontWeight.medium },
 
-  // Location
-  mapPlaceholder:{ height: 140, backgroundColor: '#FFE4EC', borderRadius: Radius.lg, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
-  mapPin:        { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
-  mapPinIcon:    { fontSize: 22 },
-  locationLabel: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
+  // ── Location ───────────────────────────────────────────────────────────────
+  mapPlaceholder: { height: 140, backgroundColor: '#FFE4EC', borderRadius: Radius.lg, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
+  mapPin:         { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  mapPinIcon:     { fontSize: 22 },
+  locationLabel:  { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
 
-  // Details grid
-  detailsGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  detailItem:    { flex: 1, minWidth: '45%', backgroundColor: '#F9FAFB', borderRadius: Radius.md, padding: Spacing.md, gap: 4 },
-  detailLabel:   { fontSize: FontSize.xs, color: Colors.textSecondary },
-  detailValue:   { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.text },
+  // ── Details grid ───────────────────────────────────────────────────────────
+  detailsGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  detailItem:   { flex: 1, minWidth: '45%', backgroundColor: '#F9FAFB', borderRadius: Radius.md, padding: Spacing.md, gap: 4 },
+  detailLabel:  { fontSize: FontSize.xs, color: Colors.textSecondary },
+  detailValue:  { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.text },
 
-  // Activity tab
+  // ── Activity tab ───────────────────────────────────────────────────────────
   activityPlaceholder: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
   activityEmoji: { fontSize: 52 },
   activityTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
   activitySub:   { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 },
-
-  // Bottom bar
-  bottomBar:     { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', paddingHorizontal: Spacing.lg, paddingTop: 14, gap: Spacing.sm, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  messageBottomBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: Radius.full, backgroundColor: '#FFF0F3', borderWidth: 1.5, borderColor: Colors.primary },
-  messageBottomIcon:{ fontSize: 18, color: Colors.primary },
-  messageBottomText:{ fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.primary },
-  likeBottomBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: Radius.full, backgroundColor: Colors.primary },
-  likeBottomIcon:{ fontSize: 18, color: '#fff' },
-  likeBottomText:{ fontSize: FontSize.base, fontWeight: FontWeight.bold, color: '#fff' },
 });

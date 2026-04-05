@@ -189,8 +189,8 @@ export default function MatchScreen({ navigation, route }) {
     });
   };
   
-  const handleKeepDiscovering = () => navigation.navigate(Routes.HOME);
-  const handleClose           = () => navigation.navigate(Routes.HOME);
+  const handleKeepDiscovering = () => navigation.goBack();
+  const handleClose           = () => navigation.goBack();
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (

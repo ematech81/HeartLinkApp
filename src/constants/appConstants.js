@@ -21,6 +21,7 @@ export const Routes = {
   MATCHES: 'Matches',
   MESSAGES: 'Messages',
   PROFILE: 'Profile',
+  LIKES:   'Likes',
 
   // Modals / Stack Screens
   USER_PROFILE: 'UserProfile',

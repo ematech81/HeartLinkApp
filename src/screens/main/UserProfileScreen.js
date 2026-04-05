@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, Image, StyleSheet, ScrollView,
   TouchableOpacity, ActivityIndicator, Dimensions,
-  StatusBar, Alert, Platform, FlatList,
+  StatusBar, Alert, Platform, FlatList, Modal,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,7 +10,8 @@ import Colors from 'src/constants/Colors';
 import { Spacing, Radius } from 'src/constants/layout';
 import { FontSize, FontWeight } from 'src/constants/topography';
 import { Routes } from 'src/constants/appConstants';
-import { UserAPI, MatchAPI } from 'services/ApiServices';
+import { UserAPI, MatchAPI, PaymentAPI } from 'services/ApiServices';
+import UpgradeModal from 'src/components/UpgradeModal';
 import { useAuth } from 'src/store/authStore';
 import { uploadProfilePicture, uploadPhotos, deletePhoto, uploadVideo } from 'src/utils/uploadImage';
 import { Video, ResizeMode } from 'expo-av';
@@ -48,7 +49,7 @@ function Section({ title, children }) {
 
 // ── Video Manager ─────────────────────────────────────────────────────────────
 
-export function VideoManager({ videoUrl, onVideoChange, isOwner = false }) {
+export function VideoManager({ videoUrl, onVideoChange, isOwner = false, onFullScreen }) {
   const [uploading, setUploading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef(null);
@@ -120,11 +121,20 @@ export function VideoManager({ videoUrl, onVideoChange, isOwner = false }) {
                 if (status.isLoaded) setIsPlaying(status.isPlaying);
               }}
             />
-            {/* Play/pause overlay */}
-            <TouchableOpacity style={videoStyles.playOverlay} onPress={togglePlay} activeOpacity={0.8}>
+            {/* Play/pause overlay — tap opens fullscreen for non-owners */}
+            <TouchableOpacity
+              style={videoStyles.playOverlay}
+              onPress={onFullScreen ? onFullScreen : togglePlay}
+              activeOpacity={0.8}
+            >
               {!isPlaying && (
                 <View style={videoStyles.playCircle}>
                   <Text style={videoStyles.playIcon}>▶</Text>
+                </View>
+              )}
+              {onFullScreen && (
+                <View style={videoStyles.fullscreenHint}>
+                  <Text style={videoStyles.fullscreenHintText}>⛶  Tap to view fullscreen</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -185,6 +195,8 @@ const videoStyles = StyleSheet.create({
   uploadTitle:   { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.primary },
   uploadSub:     { fontSize: FontSize.sm, color: Colors.textSecondary },
   uploadingText: { fontSize: FontSize.sm, color: Colors.primary, marginTop: 8 },
+  fullscreenHint: { position: 'absolute', bottom: 8, left: 0, right: 0, alignItems: 'center' },
+  fullscreenHintText: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: '600' },
 });
 
 
@@ -318,12 +330,15 @@ export default function UserProfileScreen({ navigation, route }) {
   const paramProfile = route?.params?.profile ?? null;
   const userId       = route?.params?.userId  ?? paramProfile?._id ?? paramProfile?.id;
 
-  const [profile,     setProfile]     = useState(paramProfile);
-  const [loading,     setLoading]     = useState(!paramProfile);
-  const [liking,      setLiking]      = useState(false);
-  const [photoIndex,  setPhotoIndex]  = useState(0);
-  const [error,       setError]       = useState(null);
-  const [changingPfp, setChangingPfp] = useState(false);
+  const [profile,        setProfile]        = useState(paramProfile);
+  const [loading,        setLoading]        = useState(!paramProfile);
+  const [liking,         setLiking]         = useState(false);
+  const [photoIndex,     setPhotoIndex]     = useState(0);
+  const [error,          setError]          = useState(null);
+  const [changingPfp,    setChangingPfp]    = useState(false);
+  const [showUpgrade,    setShowUpgrade]    = useState(false);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
 
   const isOwner = me?._id === (profile?._id || profile?.id)
                || me?.id  === (profile?._id || profile?.id);
@@ -434,12 +449,42 @@ const handleVideoChange = async (url) => {
     });
   };
 
+  const isSubActive = () => me?.isSubscribed &&
+    (!me.subscriptionExpiry || new Date(me.subscriptionExpiry) > new Date());
+
   const handleReport = () => {
-    Alert.alert('Report Profile', 'Why are you reporting this profile?', [
-      { text: 'Fake Profile',  onPress: () => UserAPI.reportUser(profile._id || profile.id, 'fake') },
-      { text: 'Inappropriate', onPress: () => UserAPI.reportUser(profile._id || profile.id, 'inappropriate') },
-      { text: 'Spam',          onPress: () => UserAPI.reportUser(profile._id || profile.id, 'spam') },
+    if (!isSubActive()) { setShowUpgrade(true); return; }
+    setShowReportModal(true);
+  };
+
+  const submitReport = async (reason) => {
+    setShowReportModal(false);
+    try {
+      await UserAPI.reportUser(profile._id || profile.id, reason);
+      Alert.alert('Reported', 'Thank you. We will review this profile shortly.');
+    } catch {
+      Alert.alert('Error', 'Could not submit report. Please try again.');
+    }
+  };
+
+  const handleBlock = () => {
+    if (!isSubActive()) { setShowUpgrade(true); return; }
+    const uid = profile._id || profile.id;
+    Alert.alert('Block User', `Block ${profile.name}? They won't be able to see or message you.`, [
       { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Block',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await UserAPI.blockUser(uid);
+            Alert.alert('Blocked', `${profile.name} has been blocked.`);
+            navigation.goBack();
+          } catch {
+            Alert.alert('Error', 'Could not block this user. Try again.');
+          }
+        },
+      },
     ]);
   };
 
@@ -539,7 +584,7 @@ const handleVideoChange = async (url) => {
             </View>
           )}
 
-          {/* Dot indicators */}
+          {/* Dot indicators — bottom center */}
           {allMedia.length > 1 && (
             <View style={styles.dotsRow}>
               {allMedia.map((_, i) => (
@@ -553,8 +598,8 @@ const handleVideoChange = async (url) => {
             <Text style={styles.backCircleText}>←</Text>
           </TouchableOpacity>
 
-          {/* Change profile pic (owner) OR Report (other user) */}
-          {isOwner ? (
+          {/* Change profile pic — owner only */}
+          {isOwner && (
             <TouchableOpacity
               style={[styles.reportCircle, { top: insets.top + 12 }]}
               onPress={handleChangeProfilePicture}
@@ -564,10 +609,6 @@ const handleVideoChange = async (url) => {
                 ? <ActivityIndicator size="small" color="#fff" />
                 : <Text style={styles.reportCircleText}>📷</Text>
               }
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={[styles.reportCircle, { top: insets.top + 12 }]} onPress={handleReport}>
-              <Text style={styles.reportCircleText}>⚑</Text>
             </TouchableOpacity>
           )}
 
@@ -657,29 +698,109 @@ const handleVideoChange = async (url) => {
             </Section>
           )}
 
-          {/* ── Photo gallery — owner can add/delete ──────────────────── */}
-          <Section title={isOwner ? `My Photos  (${galleryPhotos.length}/${MAX_PHOTOS})` : 'Photos'}>
-            {(galleryPhotos.length > 0 || isOwner) ? (
-              <PhotoManager
-                photos={galleryPhotos}
-                onPhotosChange={handlePhotosChange}
-                isOwner={isOwner}
-              />
-            ) : (
-              <Text style={styles.noPhotosText}>No additional photos yet.</Text>
-            )}
-          </Section>
-
           {/* ── Intro Video ── */}
-          <Section title="Intro Video">
-            <VideoManager
-              videoUrl={profile.introVideo}
-              onVideoChange={handleVideoChange}
-              isOwner={isOwner}
-            />
-          </Section>
+          {(profile.introVideo || isOwner) && (
+            <Section title="Intro Video">
+              <VideoManager
+                videoUrl={profile.introVideo}
+                onVideoChange={handleVideoChange}
+                isOwner={isOwner}
+                onFullScreen={!isOwner && profile.introVideo ? () => setShowVideoModal(true) : undefined}
+              />
+            </Section>
+          )}
+
+          {/* ── Report & Block (non-owner only) ─────────────────────── */}
+          {!isOwner && (
+            <View style={styles.dangerRow}>
+              <TouchableOpacity style={styles.reportBtn} onPress={handleReport} activeOpacity={0.8}>
+                <Text style={styles.reportBtnText}>⚑  Report User</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.blockBtn} onPress={handleBlock} activeOpacity={0.8}>
+                <Text style={styles.blockBtnText}>🚫  Block User</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
+
+      {/* ── Fullscreen video modal ─────────────────────────────────────── */}
+      <Modal
+        visible={showVideoModal}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowVideoModal(false)}
+      >
+        <View style={styles.videoModalContainer}>
+          <Video
+            source={{ uri: profile.introVideo }}
+            style={styles.videoModalPlayer}
+            resizeMode={ResizeMode.CONTAIN}
+            shouldPlay
+            isLooping
+            useNativeControls
+          />
+          <TouchableOpacity style={[styles.videoModalClose, { top: insets.top + 12 }]} onPress={() => setShowVideoModal(false)}>
+            <Text style={styles.videoModalCloseText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* ── Report modal ──────────────────────────────────────────────── */}
+      <Modal
+        visible={showReportModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowReportModal(false)}
+      >
+        <TouchableOpacity
+          style={reportStyles.backdrop}
+          activeOpacity={1}
+          onPress={() => setShowReportModal(false)}
+        />
+        <View style={reportStyles.sheet}>
+          {/* Header */}
+          <View style={reportStyles.header}>
+            <Text style={reportStyles.title}>Report Profile</Text>
+            <TouchableOpacity
+              style={reportStyles.closeBtn}
+              onPress={() => setShowReportModal(false)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={reportStyles.closeText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={reportStyles.subtitle}>Why are you reporting this profile?</Text>
+
+          {/* Reason options */}
+          {[
+            { reason: 'fake',          label: '🚫  Fake Profile',       desc: 'This profile seems to be fake or impersonating someone.' },
+            { reason: 'inappropriate', label: '⚠️  Inappropriate',       desc: 'Contains offensive or inappropriate content.' },
+            { reason: 'spam',          label: '📢  Spam',                desc: 'Sending spam or promotional messages.' },
+            { reason: 'harassment',    label: '😡  Harassment',          desc: 'Harassing or threatening behaviour.' },
+          ].map(({ reason, label, desc }) => (
+            <TouchableOpacity
+              key={reason}
+              style={reportStyles.optionRow}
+              onPress={() => submitReport(reason)}
+              activeOpacity={0.75}
+            >
+              <View style={reportStyles.optionTextWrap}>
+                <Text style={reportStyles.optionLabel}>{label}</Text>
+                <Text style={reportStyles.optionDesc}>{desc}</Text>
+              </View>
+              <Text style={reportStyles.optionArrow}>›</Text>
+            </TouchableOpacity>
+          ))}
+
+          <TouchableOpacity style={reportStyles.cancelBtn} onPress={() => setShowReportModal(false)}>
+            <Text style={reportStyles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* ── Upgrade modal ─────────────────────────────────────────────── */}
+      <UpgradeModal visible={showUpgrade} onClose={() => setShowUpgrade(false)} />
     </View>
   );
 }
@@ -698,7 +819,7 @@ const styles = StyleSheet.create({
   heroImage:     { width: W, height: HERO_H },
   photoBadge:    { position: 'absolute', bottom: 14, right: 16, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radius.full },
   photoBadgeText:{ fontSize: FontSize.xs, color: '#fff', fontWeight: FontWeight.semibold },
-  dotsRow:       { position: 'absolute', top: 12, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 },
+  dotsRow:       { position: 'absolute', bottom: 46, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 },
   dot:           { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.5)' },
   dotActive:     { width: 16, backgroundColor: '#fff' },
   backCircle:    { position: 'absolute', left: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
@@ -770,4 +891,61 @@ const styles = StyleSheet.create({
   thumbAddText: { fontSize: FontSize.xs, color: Colors.primary, fontWeight: FontWeight.medium },
   photoCount:   { fontSize: FontSize.xs, color: Colors.textLight, marginTop: Spacing.sm },
   photoCountHint: { color: Colors.primary },
+
+  // Report / Block row
+  dangerRow:   { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm, marginBottom: Spacing.lg },
+  reportBtn:   { flex: 1, paddingVertical: 14, borderRadius: Radius.full, borderWidth: 1.5, borderColor: '#F59E0B', alignItems: 'center', backgroundColor: '#FFFBEB' },
+  reportBtnText: { fontSize: FontSize.sm, color: '#B45309', fontWeight: FontWeight.semibold },
+  blockBtn:    { flex: 1, paddingVertical: 14, borderRadius: Radius.full, borderWidth: 1.5, borderColor: '#EF4444', alignItems: 'center', backgroundColor: '#FEF2F2' },
+  blockBtnText:  { fontSize: FontSize.sm, color: '#EF4444', fontWeight: FontWeight.semibold },
+
+  // Fullscreen video modal
+  videoModalContainer: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+  videoModalPlayer:    { width: W, height: H },
+  videoModalClose:     { position: 'absolute', right: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  videoModalCloseText: { color: '#fff', fontSize: 18, fontWeight: FontWeight.bold },
+});
+
+// ── Report modal styles ───────────────────────────────────────────────────────
+const reportStyles = StyleSheet.create({
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 12 },
+      android: { elevation: 20 },
+    }),
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 6,
+  },
+  title:    { fontSize: 18, fontWeight: FontWeight.bold, color: '#2D3436' },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  closeText: { fontSize: 14, color: '#636E72', fontWeight: FontWeight.bold },
+  subtitle:  { fontSize: 13, color: '#888', marginBottom: 16 },
+
+  optionRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+  },
+  optionTextWrap: { flex: 1 },
+  optionLabel:    { fontSize: 15, fontWeight: FontWeight.semibold, color: '#2D3436', marginBottom: 2 },
+  optionDesc:     { fontSize: 12, color: '#A0A0A0' },
+  optionArrow:    { fontSize: 22, color: '#C0C0C0', marginLeft: 8 },
+
+  cancelBtn: {
+    marginTop: 14, paddingVertical: 14, borderRadius: 28,
+    backgroundColor: '#F3F4F6', alignItems: 'center',
+  },
+  cancelText: { fontSize: 15, fontWeight: FontWeight.semibold, color: '#636E72' },
 });

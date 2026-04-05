@@ -14,12 +14,15 @@ import {
   setupNotificationListeners,
   clearBadge,
 } from 'src/services/notificationService';
+import { useSubscriptionStatus } from 'src/hooks/useSubscriptionStatus';
+import ExpiryBanner from 'src/components/ExpiryBanner';
 
 
 import SplashScreen from 'screen/generalScreens/SplashScreen';
 import OnboardingScreen from 'screen/generalScreens/OnboardingScreen';
 import WelcomeScreen from 'screen/generalScreens/WelcomeScreen';
 import RegisterScreen from 'screen/auth/RegistrationScreen';
+import CompleteProfileScreen from 'screen/auth/RegistrationScreen'; // same component, google mode
 import LoginScreen from 'screen/auth/LoginScreen';
 import ForgotPasswordScreen from 'screen/auth/ResetPasswordScreen';
 import ResetPasswordScreen from 'screen/auth/ResetPasswordScreen';
@@ -30,6 +33,7 @@ import DiscoverScreen from 'src/screens/main/DiscoverScreen';
 import MatchesScreen  from 'src/screens/main/MatchesScreen';
 import MessagesScreen from 'src/screens/main/MessagesScreen';
 import ProfileScreen  from 'src/screens/main/ProfileScreen';
+import LikesScreen    from 'src/screens/main/LikesScreen';
 import { useAuth } from 'src/store/authStore';
 import OTPScreen from 'src/screens/auth/OtpScreen';
 import ChatScreen from 'screen/main/ChatScreen';
@@ -58,11 +62,11 @@ function MainTabs() {
   const insets = useSafeAreaInsets();           // ← get device insets
 
   const tabs = [
-    { name: Routes.HOME,     component: HomeScreen,     label: 'Home',     icon: '🏠' },
+    { name: Routes.HOME,     component: HomeScreen,     label: 'Swipe',    icon: '🔥' },
     { name: Routes.DISCOVER, component: DiscoverScreen, label: 'Discover', icon: '🔍' },
     { name: Routes.MATCHES,  component: MatchesScreen,  label: 'Matches',  icon: '💕' },
     { name: Routes.MESSAGES, component: MessagesScreen, label: 'Messages', icon: '💬' },
-    { name: Routes.PROFILE,  component: ProfileScreen,  label: 'Profile',  icon: '👤' },
+    { name: Routes.LIKES,    component: LikesScreen,    label: 'Likes',    icon: '❤️' },
   ];
 
   return (
@@ -99,6 +103,29 @@ function MainTabs() {
   );
 }
 
+// ── Authenticated shell — wraps all logged-in screens ────────────────────────
+function AuthenticatedShell({ children, navigationRef }) {
+  const {
+    showSubExpiryWarning,
+    showBoostExpiryWarning,
+    subDaysLeft,
+    boostDaysLeft,
+  } = useSubscriptionStatus();
+
+  return (
+    <View style={{ flex: 1 }}>
+      {children}
+      <ExpiryBanner
+        showSubWarning={showSubExpiryWarning}
+        showBoostWarning={showBoostExpiryWarning}
+        subDaysLeft={subDaysLeft}
+        boostDaysLeft={boostDaysLeft}
+        onRenewSub={() => navigationRef?.current?.navigate('Profile')}
+      />
+    </View>
+  );
+}
+
 // ── Root navigator ────────────────────────────────────────────────────────
 export default function AppNavigator() {
   const { isAuthenticated, isInitializing, user } = useAuth();
@@ -128,22 +155,48 @@ export default function AppNavigator() {
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isInitializing ? (
             <Stack.Screen name="Initializing" component={InitializingScreen} />
+          ) : isAuthenticated && user && !user.isProfileComplete ? (
+            // Google new user — force them to complete their profile before entering the app
+            <Stack.Screen name="CompleteProfile">
+              {(props) => (
+                <CompleteProfileScreen
+                  {...props}
+                  route={{
+                    ...props.route,
+                    params: {
+                      googleMode:  true,
+                      googleToken: null,      // token already saved in authStore
+                      googleUser: {
+                        name:           user.name,
+                        email:          user.email,
+                        profilePicture: user.profilePicture,
+                        userId:         user._id,
+                      },
+                    },
+                  }}
+                />
+              )}
+            </Stack.Screen>
           ) : isAuthenticated ? (
-            // ✅ Wrap authenticated screens in a Fragment
-            <>
-              <Stack.Screen name={Routes.MAIN} component={MainTabs} />
-              <Stack.Screen name={Routes.CHAT} component={ChatScreen} />
-              <Stack.Screen name={Routes.USER_PROFILE} component={UserProfileScreen} />
-              <Stack.Screen
-             name="MatchScreen"
-             component={MatchScreen}
-             options={{
-             presentation: 'transparentModal',  // ← overlays everything
-             animation:    'fade',
-             headerShown:  false,
-             }}/>
-              <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-            </>
+            // ✅ Wrap authenticated screens with expiry banner shell
+            <Stack.Screen name="AuthRoot">
+              {() => (
+                <AuthenticatedShell navigationRef={navigationRef}>
+                  <Stack.Navigator screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name={Routes.MAIN} component={MainTabs} />
+                    <Stack.Screen name={Routes.CHAT} component={ChatScreen} />
+                    <Stack.Screen name={Routes.USER_PROFILE} component={UserProfileScreen} />
+                    <Stack.Screen
+                      name="MatchScreen"
+                      component={MatchScreen}
+                      options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }}
+                    />
+                    <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+                    <Stack.Screen name={Routes.PROFILE} component={ProfileScreen} />
+                  </Stack.Navigator>
+                </AuthenticatedShell>
+              )}
+            </Stack.Screen>
           ) : (
             <>
               <Stack.Screen name={Routes.SPLASH} component={SplashScreen} />

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "heartlink-app",
+    "name": "Heartlink",
     "slug": "heartlink-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,7 +12,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.heartlink.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,12 +22,14 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.anonymous.heartlinkapp",
+      "package": "com.heartlink.app",
+      "versionCode": 1,
       "permissions": [
-        "CAMERA",
-        "READ_MEDIA_IMAGES",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -34,6 +37,13 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#E6F4FE"
+        }
+      ],
       [
         "expo-image-picker",
         {
@@ -47,7 +57,19 @@
           "locationAlwaysAndWhenInUsePermission": "HeartLink needs your location to show nearby matches."
         }
       ],
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.529395727102-orvff4q7raal1p72nrgt1vcjvagvumas"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "444774b6-e0ec-4376-ae07-e3152051720e"
+      }
+    },
+    "owner": "ematech81"
   }
 }

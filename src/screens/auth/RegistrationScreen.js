@@ -712,7 +712,6 @@ export default function RegisterScreen({ navigation }) {
         animationType="slide"
         onRequestClose={() => setShowAgreementModal(false)}
       >
-      .;/
         <View style={agreementStyles.overlay}>
           <View style={agreementStyles.sheet}>
 

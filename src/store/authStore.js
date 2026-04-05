@@ -142,10 +142,33 @@ export function AuthProvider({ children }) {
     }
   };
  
-  // ── Login with token (after OTP verify) ──────────────────────────────────
+  // ── Login with token (after OTP verify or Google new-user profile complete) ─
   const loginWithToken = async (token, user) => {
     await saveSession(token, user);
     dispatch({ type: AUTH_SUCCESS, payload: { token, user } });
+  };
+
+  // ── Google Sign-In ────────────────────────────────────────────────────────
+  // Returns { success, isNewUser, token, user } so the caller can decide
+  // whether to go home (existing) or to RegistrationScreen (new user).
+  const googleLogin = async (idToken) => {
+    dispatch({ type: SET_LOADING, payload: true });
+    try {
+      const data = await AuthAPI.googleAuth(idToken);
+      if (!data.isNewUser) {
+        // Existing user — save session and authenticate immediately
+        await saveSession(data.token, data.user);
+        dispatch({ type: AUTH_SUCCESS, payload: { token: data.token, user: data.user } });
+      }
+      // For new users we intentionally do NOT dispatch AUTH_SUCCESS yet —
+      // the navigator must stay on the auth stack so RegistrationScreen is reachable.
+      dispatch({ type: SET_LOADING, payload: false });
+      return { success: true, isNewUser: !!data.isNewUser, token: data.token, user: data.user };
+    } catch (err) {
+      dispatch({ type: SET_ERROR, payload: err.message });
+      dispatch({ type: SET_LOADING, payload: false });
+      return { success: false, message: err.message };
+    }
   };
  
   // ── Logout ────────────────────────────────────────────────────────────────
@@ -173,6 +196,7 @@ export function AuthProvider({ children }) {
         ...state,
         register,
         login,
+        googleLogin,
         loginWithToken,
         logout,
         updateUser,

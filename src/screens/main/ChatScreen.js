@@ -11,8 +11,7 @@ import { FontSize, FontWeight } from 'src/constants/topography';
 import { MessageAPI } from 'services/ApiServices';
 import { useAuth } from 'src/store/authStore';
 import SocketService from 'services/socketService';
-// import SocketService from 'src/services/socketService';
-// import SocketService from 'services/SocketService';
+import UpgradeModal from 'src/components/UpgradeModal';
 
 // ── Dummy messages for dev ────────────────────────────────────────────────────
 const DUMMY_MESSAGES = [
@@ -129,12 +128,13 @@ export default function ChatScreen({ navigation, route }) {
     || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=FF4D6D&color=fff&size=100`;
   const matchId    = route?.params?.matchId;
 
-  const [messages,  setMessages]  = useState([]);
-  const [inputText, setInputText] = useState('');
-  const [loading,   setLoading]   = useState(true);
-  const [sending,   setSending]   = useState(false);
-  const [isTyping,  setIsTyping]  = useState(false);
-  const [isOnline,  setIsOnline]  = useState(false);
+  const [messages,        setMessages]        = useState([]);
+  const [inputText,       setInputText]       = useState('');
+  const [loading,         setLoading]         = useState(true);
+  const [sending,         setSending]         = useState(false);
+  const [isTyping,        setIsTyping]        = useState(false);
+  const [isOnline,        setIsOnline]        = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const flatListRef = useRef(null);
   const typingTimer = useRef(null);
@@ -221,6 +221,14 @@ export default function ChatScreen({ navigation, route }) {
     const text = inputText.trim();
     if (!text || sending) return;
 
+    // ── Subscription gate ─────────────────────────────────────────────────
+    const subActive = user?.isSubscribed &&
+      (!user.subscriptionExpiry || new Date(user.subscriptionExpiry) > new Date());
+    if (!subActive) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     const tempId = `temp-${Date.now()}`;
     const optimistic = {
       _id:       tempId,
@@ -257,7 +265,14 @@ export default function ChatScreen({ navigation, route }) {
         )
       );
     } catch (err) {
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      const serverMsg = err?.data?.message || err?.message || '';
+      const isMatchError = err?.status === 403 || serverMsg.toLowerCase().includes('matched');
+      Alert.alert(
+        'Error',
+        isMatchError
+          ? 'You must be matched to send messages.'
+          : 'Failed to send message. Please try again.'
+      );
       setMessages((prev) => prev.filter((m) => m._id !== tempId));
       setInputText(text);
     } finally {
@@ -385,6 +400,13 @@ export default function ChatScreen({ navigation, route }) {
             }
           </TouchableOpacity>
         </View>
+
+        {/* ── Subscription upgrade modal ─────────────────────────────── */}
+        <UpgradeModal
+          visible={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          onSuccess={() => setShowUpgradeModal(false)}
+        />
       </View>
     </KeyboardAvoidingView>
   );

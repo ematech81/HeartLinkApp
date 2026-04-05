@@ -67,6 +67,7 @@ api.interceptors.response.use(
 export const AuthAPI = {
   register:       (data)            => api.post('/auth/register', data),
   login:          (data)            => api.post('/auth/login', data),
+  googleAuth:     (idToken)         => api.post('/auth/google', { idToken }),
   getMe:          ()                => api.get('/auth/me'),
   sendOtp:        (phone)           => api.post('/auth/send-otp', { phone }),
   verifyOtp:      (phone, otp)      => api.post('/auth/verify-otp', { phone, otp }),
@@ -99,6 +100,8 @@ export const MatchAPI = {
   likeUser:   (userId, isSuperLike = false) => api.post(`/matches/like/${userId}`, { isSuperLike }),
   passUser:   (userId)  => api.post(`/matches/pass/${userId}`),
   getMatches: ()        => api.get('/matches'),
+  getLikes:   ()        => api.get('/matches/likes'),
+  removeLike: (likeId)  => api.delete(`/matches/likes/${likeId}`),
   unmatch:    (matchId) => api.delete(`/matches/${matchId}`),
 };
 
@@ -109,6 +112,22 @@ export const MessageAPI = {
   getConversations: ()                    => api.get('/messages/conversations'),
   getMessages:      (userId, page = 1)    => api.get(`/messages/${userId}`, { params: { page } }),
   sendMessage:      (receiverId, content) => api.post(`/messages/${receiverId}`, { content }),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payment Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+export const PaymentAPI = {
+  // ── Paystack checkout (real money) ─────────────────────────────────────────
+  initializePayment: (plan)          => api.post('/payment/initialize', { plan }),
+  verifyPayment:     (reference, plan) => api.post('/payment/verify', { reference, plan }),
+
+  // ── Legacy endpoints ───────────────────────────────────────────────────────
+  subscribe:      (plan = 'monthly') => api.post('/payment/subscribe', { plan }),
+  boostProfile:   ()                 => api.post('/payment/boost'),
+  getTopProfiles: ()                 => api.get('/payment/top-profiles'),
+  getStatus:      ()                 => api.get('/payment/status'),
+  runExpiryCheck: ()                 => api.post('/payment/run-expiry'),
 };
 
 export default api;

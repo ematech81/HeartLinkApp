@@ -46,7 +46,7 @@ export const registerForPushNotifications = async () => {
 
     // Get the Expo push token
     const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: 'your-expo-project-id', // replace with your EAS project ID
+      projectId: '444774b6-e0ec-4376-ae07-e3152051720e', // replace with your EAS project ID
     });
 
     const token = tokenData.data;

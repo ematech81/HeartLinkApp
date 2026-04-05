@@ -9,7 +9,7 @@ import Colors from 'src/constants/Colors';
 import { Spacing, Radius } from 'src/constants/layout';
 import { FontSize, FontWeight } from 'src/constants/topography';
 import { Routes } from 'src/constants/appConstants';
-import { MatchAPI, MessageAPI } from 'services/ApiServices';
+import { MatchAPI, MessageAPI, PaymentAPI } from 'services/ApiServices';
 import { useAuth } from 'src/store/authStore';
 import { timeAgo } from 'src/utils/dateUtils';
 
@@ -23,6 +23,13 @@ const DUMMY_MATCHES = [
   { matchId: '2', user: { _id: '2', name: 'David',  profilePicture: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200', isOnline: false }},
   { matchId: '3', user: { _id: '3', name: 'Elena',  profilePicture: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200', isOnline: false }},
   { matchId: '4', user: { _id: '4', name: 'Mark',   profilePicture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200', isOnline: true }},
+];
+
+const DUMMY_BOOSTED = [
+  { _id: 'b1', name: 'Sophia',  dateOfBirth: '1998-06-12', city: 'Lagos', isBoosted: true, isVerified: true, profilePicture: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200' },
+  { _id: 'b2', name: 'Zara',    dateOfBirth: '1996-03-22', city: 'Abuja', isBoosted: true, isVerified: true, profilePicture: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=200' },
+  { _id: 'b3', name: 'Amara',   dateOfBirth: '1999-11-08', city: 'Enugu', isBoosted: true, isVerified: true, profilePicture: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200' },
+  { _id: 'b4', name: 'Daniela', dateOfBirth: '2000-01-15', city: 'PH',    isBoosted: true, isVerified: true, profilePicture: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=200' },
 ];
 
 const DUMMY_CONVERSATIONS = [
@@ -48,6 +55,41 @@ const DUMMY_CONVERSATIONS = [
     isActive: false,
   },
 ];
+
+// ── Boosted profile card ──────────────────────────────────────────────────────
+function BoostedCard({ user, onPress }) {
+  const avatar = user.profilePicture
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=3498DB&color=fff&size=100`;
+  return (
+    <TouchableOpacity style={boostedCardStyles.card} onPress={() => onPress(user)} activeOpacity={0.85}>
+      <Image source={{ uri: avatar }} style={boostedCardStyles.avatar} />
+      {/* Blue verified tick */}
+      <View style={boostedCardStyles.tick}>
+        <Text style={boostedCardStyles.tickText}>✔</Text>
+      </View>
+      <Text style={boostedCardStyles.name} numberOfLines={1}>
+        {user.name?.split(' ')[0]}
+      </Text>
+      {user.city ? (
+        <Text style={boostedCardStyles.city} numberOfLines={1}>{user.city}</Text>
+      ) : null}
+    </TouchableOpacity>
+  );
+}
+
+const boostedCardStyles = StyleSheet.create({
+  card:     { alignItems: 'center', marginRight: 12, width: 72 },
+  avatar:   { width: 66, height: 66, borderRadius: 33, borderWidth: 2.5, borderColor: '#3498DB' },
+  tick: {
+    position: 'absolute', top: 0, right: 0,
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: '#3498DB', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#fff',
+  },
+  tickText: { fontSize: 9, color: '#fff', fontWeight: '700' },
+  name:     { fontSize: FontSize.xs, color: '#2D3436', marginTop: 5, fontWeight: FontWeight.semibold, textAlign: 'center' },
+  city:     { fontSize: 9, color: '#A0A0A0', textAlign: 'center' },
+});
 
 // ── Story avatar (top matches row) ─────────────────────────────────────────────
 function StoryAvatar({ match, onPress }) {
@@ -173,6 +215,7 @@ export default function MessagesScreen({ navigation }) {
   const [activeTab,      setActiveTab]      = useState('All');
   const [matches,        setMatches]        = useState([]);
   const [conversations,  setConversations]  = useState([]);
+  const [boostedProfiles, setBoostedProfiles] = useState([]);
   const [searchQuery,    setSearchQuery]    = useState('');
   const [showSearch,     setShowSearch]     = useState(false);
   const [loading,        setLoading]        = useState(true);
@@ -181,18 +224,21 @@ export default function MessagesScreen({ navigation }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [matchData, convData] = await Promise.all([
+      const [matchData, convData, topData] = await Promise.all([
         MatchAPI.getMatches(),
         MessageAPI.getConversations(),
+        PaymentAPI.getTopProfiles().catch(() => ({ users: [] })), // non-fatal
       ]);
-      setMatches(matchData.matches    || DUMMY_MATCHES);
-      setConversations(convData.conversations || DUMMY_CONVERSATIONS);
+      setMatches(matchData.matches             || DUMMY_MATCHES);
+      setConversations(convData.conversations  || DUMMY_CONVERSATIONS);
+      const boosted = topData.users || [];
+      setBoostedProfiles(boosted.length > 0 ? boosted : __DEV__ ? DUMMY_BOOSTED : []);
     } catch (err) {
       console.log('Messages fetch error:', err.message);
-      // Use dummy data in development
       if (__DEV__) {
         setMatches(DUMMY_MATCHES);
         setConversations(DUMMY_CONVERSATIONS);
+        setBoostedProfiles(DUMMY_BOOSTED);
       }
     } finally {
       setLoading(false);
@@ -234,6 +280,13 @@ export default function MessagesScreen({ navigation }) {
       userName:  match.user.name,
       userAvatar: match.user.profilePicture,
       matchId:   match.matchId,
+    });
+  };
+
+  const openBoostedProfile = (boostedUser) => {
+    navigation.navigate(Routes.USER_PROFILE, {
+      userId:  boostedUser._id,
+      profile: boostedUser,
     });
   };
 
@@ -295,6 +348,29 @@ export default function MessagesScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <>
+              {/* ── Boosted / Top Profiles row ──────────────────────────── */}
+              {boostedProfiles.length > 0 && (
+                <View style={styles.boostedSection}>
+                  <View style={styles.boostedHeader}>
+                    <Text style={styles.boostedLabel}>⚡ Top Profiles</Text>
+                    <View style={styles.boostedBadge}>
+                      <Text style={styles.boostedBadgeText}>BOOSTED</Text>
+                    </View>
+                  </View>
+                  <FlatList
+                    data={boostedProfiles}
+                    keyExtractor={(u) => u._id}
+                    renderItem={({ item }) => (
+                      <BoostedCard user={item} onPress={openBoostedProfile} />
+                    )}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.boostedList}
+                  />
+                </View>
+              )}
+              {boostedProfiles.length > 0 && <View style={styles.divider} />}
+
               {/* ── Story-style matches row ─────────────────────────────── */}
               {matches.length > 0 && (
                 <View style={styles.storiesSection}>
@@ -369,6 +445,14 @@ const styles = StyleSheet.create({
     height: 3, backgroundColor: '#FF4B7A', borderRadius: 2,
   },
   tabDivider: { height: 1, backgroundColor: '#F0E0E6' },
+
+  // ── Boosted profiles ───────────────────────────────────────────────────
+  boostedSection: { backgroundColor: '#F0F8FF', paddingVertical: Spacing.md, paddingTop: 14 },
+  boostedHeader:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, marginBottom: 10, gap: 8 },
+  boostedLabel:   { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: '#2D3436' },
+  boostedBadge:   { backgroundColor: '#3498DB', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  boostedBadgeText: { fontSize: 9, color: '#fff', fontWeight: FontWeight.bold, letterSpacing: 0.5 },
+  boostedList:    { paddingHorizontal: Spacing.lg },
 
   // ── Stories ────────────────────────────────────────────────────────────
   storiesSection: { backgroundColor: Colors.white, paddingVertical: Spacing.md },
