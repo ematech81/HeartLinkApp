@@ -2,6 +2,7 @@
   "expo": {
     "name": "Heartlink",
     "slug": "heartlink-app",
+    "scheme": "heartlink",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -57,13 +58,7 @@
           "locationAlwaysAndWhenInUsePermission": "HeartLink needs your location to show nearby matches."
         }
       ],
-      "expo-web-browser",
-      [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.googleusercontent.apps.529395727102-orvff4q7raal1p72nrgt1vcjvagvumas"
-        }
-      ]
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

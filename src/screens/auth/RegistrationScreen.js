@@ -193,9 +193,15 @@ const sectionStyles = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
-export default function RegisterScreen({ navigation }) {
+export default function RegisterScreen({ navigation, route }) {
   const { loginWithToken, updateUser } = useAuth();
-  const [step, setStep]       = useState(1);
+
+  // ── Google mode: skip step 1, start from step 2 ───────────────────────────
+  const googleMode  = route?.params?.googleMode  ?? false;
+  const googleToken = route?.params?.googleToken ?? null;
+  const googleUser  = route?.params?.googleUser  ?? null;
+
+  const [step, setStep]       = useState(googleMode ? 2 : 1);
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
   
@@ -248,11 +254,12 @@ export default function RegisterScreen({ navigation }) {
     step2.values.relationshipType === 'single_mother' ||
     step2.values.relationshipType === 'single_father';
  
-  const totalSteps = isSingleParent ? 9 : 8; // skip kids step if not single parent
- 
+  const totalSteps    = isSingleParent ? 9 : 8; // skip kids step if not single parent
+  const firstStep     = googleMode ? 2 : 1;
+
   // ── Navigation helpers ─────────────────────────────────────────────────────
   const goBack = () => {
-    if (step === 1) { navigation.goBack(); return; }
+    if (step <= firstStep) { navigation.goBack(); return; }
     let prev = step - 1;
     if (!isSingleParent && prev === 5) prev = 4; // skip kids step
     setStep(prev);
@@ -267,7 +274,7 @@ export default function RegisterScreen({ navigation }) {
   // ── Step validation ────────────────────────────────────────────────────────
   const validateCurrentStep = () => {
     switch (step) {
-      case 1: return step1.validate();
+      case 1: return googleMode ? true : step1.validate();
       case 2: return step2.validate();
       case 3:
         if (!lookingFor) { setErr('lookingFor', 'Please select who you are looking for'); return false; }
@@ -364,12 +371,7 @@ export default function RegisterScreen({ navigation }) {
     setShowAgreementModal(false);
     setLoading(true);
     try {
-      // Step 1: Register user WITHOUT photo first
-      const payload = {
-        name:             step1.values.name.trim(),
-        email:            step1.values.email.trim().toLowerCase(),
-        phone:            step1.values.phone.trim(),
-        password:         step1.values.password,
+      const profilePayload = {
         gender:           step2.values.gender,
         relationshipType: step2.values.relationshipType,
         dateOfBirth:      step2.values.dateOfBirth,
@@ -389,42 +391,77 @@ export default function RegisterScreen({ navigation }) {
           kidsAges:     kidsAges.length ? kidsAges : undefined,
         }),
       };
-   
+
+      if (googleMode) {
+        // ── Google user — profile completion path ─────────────────────────────
+        // The user already exists in the backend (created during Google auth).
+        // We first log them in (so the API token is set), then update their profile.
+        const token = googleToken;
+        const partialUser = {
+          _id:            googleUser?.userId,
+          name:           googleUser?.name,
+          email:          googleUser?.email,
+          profilePicture: googleUser?.profilePicture,
+          isProfileComplete: false,
+        };
+        await loginWithToken(token, partialUser);
+
+        // Now update the full profile on the backend
+        await UserAPI.updateProfile({ ...profilePayload, isProfileComplete: true });
+
+        // Upload photo if picked
+        if (photo) {
+          setUploadProgress('Uploading your photo...');
+          try {
+            const photoUrl = await uploadProfilePicture(photo);
+            await UserAPI.updateProfile({ profilePicture: photoUrl });
+            updateUser({ profilePicture: photoUrl });
+          } catch {
+            // Non-fatal — user can add photo later
+          }
+        }
+
+        // Mark complete in local store so navigator removes the gate
+        updateUser({ isProfileComplete: true });
+        return;
+      }
+
+      // ── Standard registration path ─────────────────────────────────────────
+      const payload = {
+        name:     step1.values.name.trim(),
+        email:    step1.values.email.trim().toLowerCase(),
+        phone:    step1.values.phone.trim(),
+        password: step1.values.password,
+        ...profilePayload,
+      };
+
       const data = await AuthAPI.register(payload);
-   
-      // Step 2: Upload photo AFTER registration (we now have a token)
+
+      // Upload photo AFTER registration (we now have a token)
       if (photo) {
         setUploadProgress('Uploading your photo...');
         try {
           await loginWithToken(data.token, data.user);
           const photoUrl = await uploadProfilePicture(photo);
-          console.log('✅ Profile picture uploaded:', photoUrl);
-      
-          // ← Save URL to backend so it persists after reload
           await UserAPI.updateProfile({ profilePicture: photoUrl });
-      
-          // ← Update local auth state so profile screen shows it immediately
           updateUser({ profilePicture: photoUrl });
-      
         } catch (uploadErr) {
-          // Photo upload failed — user is still registered, just without photo
           console.log('⚠️ Photo upload failed:', uploadErr.message);
           Alert.alert(
             'Almost done!',
-            'Your account was created successfully, but we could not upload your photo. You can add it later from your profile.',
+            'Your account was created but we could not upload your photo. You can add it later from your profile.',
             [{ text: 'OK' }]
           );
         }
       } else {
-        // No photo — just log in
         await loginWithToken(data.token, data.user);
       }
-   
+
     } catch (err) {
       let message = err.message || 'Registration failed. Please try again.';
       if (message.toLowerCase().includes('already')) {
         message = 'This email or phone number is already registered. Please log in instead.';
-        setStep(1);
+        setStep(firstStep);
       }
       Alert.alert('Registration Failed', message);
     } finally {
@@ -661,13 +698,17 @@ export default function RegisterScreen({ navigation }) {
       >
         {/* Back */}
         <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <Text style={styles.backText}>← {step === 1 ? 'Back' : 'Previous'}</Text>
+          <Text style={styles.backText}>← {step <= firstStep ? 'Back' : 'Previous'}</Text>
         </TouchableOpacity>
- 
+
         {/* Progress */}
         <View style={styles.stepHeader}>
-          <Text style={styles.stepCount}>Step {step} of {totalSteps}</Text>
-          <StepIndicator current={step} total={totalSteps} />
+          <Text style={styles.stepCount}>
+            {googleMode
+              ? `Step ${step - 1} of ${totalSteps - 1}`
+              : `Step ${step} of ${totalSteps}`}
+          </Text>
+          <StepIndicator current={step - (googleMode ? 1 : 0)} total={totalSteps - (googleMode ? 1 : 0)} />
         </View>
  
         {/* Step content */}

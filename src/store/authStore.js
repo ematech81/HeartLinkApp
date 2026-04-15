@@ -151,10 +151,10 @@ export function AuthProvider({ children }) {
   // ── Google Sign-In ────────────────────────────────────────────────────────
   // Returns { success, isNewUser, token, user } so the caller can decide
   // whether to go home (existing) or to RegistrationScreen (new user).
-  const googleLogin = async (idToken) => {
+  const googleLogin = async (accessToken) => {
     dispatch({ type: SET_LOADING, payload: true });
     try {
-      const data = await AuthAPI.googleAuth(idToken);
+      const data = await AuthAPI.googleAuth(accessToken);
       if (!data.isNewUser) {
         // Existing user — save session and authenticate immediately
         await saveSession(data.token, data.user);

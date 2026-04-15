@@ -14,11 +14,12 @@ import { Routes }  from 'src/constants/appConstants';
 import { validatePassword, validateConfirmPassword }  from 'utils/Validation';
 import { useForm } from 'src/hooks/useForm';
 import Button from 'src/component/common/Button';
-import {FontSize, FontWeight  } from 'src/constants/topography';
+import Input from 'src/component/common/Input';
+import { FontSize, FontWeight } from 'src/constants/topography';
 import { AuthAPI } from 'services/ApiServices';
 import AppStatusBar from 'src/component/common/AppStatusBar';
 import BackButton from 'src/component/common/BackButton';
-import Input from 'src/component/common/Input';
+import { useAuth } from 'src/store/authStore';
 
 // ── Password strength meter ───────────────────────────────────────────────────
 function StrengthMeter({ password }) {
@@ -29,89 +30,79 @@ function StrengthMeter({ password }) {
     if (/[A-Z]/.test(password))             score++;
     if (/[0-9]/.test(password))             score++;
     if (/[^A-Za-z0-9]/.test(password))      score++;
-
     const levels = [
-      { score: 1, label: 'Weak',      color: '#EF4444' },
-      { score: 2, label: 'Fair',      color: '#F59E0B' },
-      { score: 3, label: 'Good',      color: '#3B82F6' },
-      { score: 4, label: 'Strong',    color: Colors.success },
+      { score: 1, label: 'Weak',   color: '#EF4444' },
+      { score: 2, label: 'Fair',   color: '#F59E0B' },
+      { score: 3, label: 'Good',   color: '#3B82F6' },
+      { score: 4, label: 'Strong', color: Colors.success },
     ];
     return levels[score - 1] || { score: 0, label: '', color: '#E5E7EB' };
   };
-
   const strength = getStrength();
-
   return (
     <View style={meterStyles.container}>
       <View style={meterStyles.barsRow}>
         {[1, 2, 3, 4].map((i) => (
           <View
             key={i}
-            style={[
-              meterStyles.bar,
-              { backgroundColor: i <= strength.score ? strength.color : '#E5E7EB' },
-            ]}
+            style={[meterStyles.bar, { backgroundColor: i <= strength.score ? strength.color : '#E5E7EB' }]}
           />
         ))}
       </View>
       {strength.label ? (
-        <Text style={[meterStyles.label, { color: strength.color }]}>
-          {strength.label}
-        </Text>
+        <Text style={[meterStyles.label, { color: strength.color }]}>{strength.label}</Text>
       ) : null}
     </View>
   );
 }
 
 const meterStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    marginTop: -Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  barsRow: {
-    flexDirection: 'row',
-    gap: 4,
-    flex: 1,
-  },
-  bar: {
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
-  },
-  label: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.semibold,
-    width: 44,
-    textAlign: 'right',
-  },
+  container: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: -Spacing.sm, marginBottom: Spacing.md },
+  barsRow:   { flexDirection: 'row', gap: 4, flex: 1 },
+  bar:       { flex: 1, height: 4, borderRadius: 2 },
+  label:     { fontSize: FontSize.xs, fontWeight: FontWeight.semibold, width: 44, textAlign: 'right' },
 });
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
-export default function ResetPasswordScreen({ navigation, route }) {
-  const resetToken = route?.params?.token ?? '';
-  const email      = route?.params?.email ?? '';
+export default function ResetPasswordScreen({ navigation }) {
+  const { loginWithToken } = useAuth();
+  const [resetCode, setResetCode] = useState('');
+  const [codeError, setCodeError] = useState('');
   const [loading, setLoading]     = useState(false);
   const [success, setSuccess]     = useState(false);
 
   const { values, errors, handleChange, handleBlur, validate } = useForm(
     { password: '', confirmPassword: '' },
     {
-      password: validatePassword,
+      password:        validatePassword,
       confirmPassword: (v) => validateConfirmPassword(values.password, v),
     }
   );
 
   const handleReset = async () => {
+    const code = resetCode.trim();
+    if (!code) { setCodeError('Please enter the reset code from your email.'); return; }
+    if (!/^\d{6}$/.test(code)) { setCodeError('The reset code must be 6 digits.'); return; }
+    setCodeError('');
     if (!validate()) return;
+
     setLoading(true);
     try {
-      await AuthAPI.resetPassword(resetToken, values.password);
-      setSuccess(true);
+      const data = await AuthAPI.resetPassword(code, values.password);
+      // Backend returns a new JWT — log the user in directly
+      if (data?.token && data?.user) {
+        await loginWithToken(data.token, data.user);
+      } else {
+        setSuccess(true);
+      }
     } catch (err) {
-      Alert.alert('Error', err.message || 'Failed to reset password. Please try again.');
+      let msg = err.message || 'Failed to reset password. Please try again.';
+      if (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('expired')) {
+        msg = 'Invalid or expired code. Please request a new one.';
+        setCodeError(msg);
+      } else {
+        Alert.alert('Error', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -144,7 +135,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <AppStatusBar theme="dark" />
       <ScrollView
@@ -160,15 +151,26 @@ export default function ResetPasswordScreen({ navigation, route }) {
           <View style={styles.iconBox}>
             <Text style={styles.iconEmoji}>🔒</Text>
           </View>
-          <Text style={styles.title}>Create New Password</Text>
+          <Text style={styles.title}>Reset Password</Text>
           <Text style={styles.subtitle}>
-            Your new password must be different from your previous password.
+            Enter the 6-digit code we sent to your email, then choose a new password.
           </Text>
         </View>
 
+        {/* Reset code */}
+        <Input
+          label="Reset Code"
+          placeholder="Enter 6-digit code"
+          value={resetCode}
+          onChangeText={(v) => { setResetCode(v.replace(/\D/g, '').slice(0, 6)); setCodeError(''); }}
+          error={codeError}
+          keyboardType="number-pad"
+          maxLength={6}
+        />
+
         {/* Password rules */}
         <View style={styles.rulesBox}>
-          <Text style={styles.rulesTitle}>Password must contain:</Text>
+          <Text style={styles.rulesTitle}>New password must contain:</Text>
           {[
             'At least 8 characters',
             'One uppercase letter (A-Z)',
@@ -184,12 +186,8 @@ export default function ResetPasswordScreen({ navigation, route }) {
             const passed = checks[i];
             return (
               <View key={i} style={styles.ruleRow}>
-                <Text style={[styles.ruleIcon, passed && styles.ruleIconPassed]}>
-                  {passed ? '✓' : '○'}
-                </Text>
-                <Text style={[styles.ruleText, passed && styles.ruleTextPassed]}>
-                  {rule}
-                </Text>
+                <Text style={[styles.ruleIcon, passed && styles.ruleIconPassed]}>{passed ? '✓' : '○'}</Text>
+                <Text style={[styles.ruleText,  passed && styles.ruleTextPassed]}>{rule}</Text>
               </View>
             );
           })}
@@ -223,7 +221,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
           title="Reset Password"
           onPress={handleReset}
           loading={loading}
-          disabled={!values.password || !values.confirmPassword}
+          disabled={!resetCode || !values.password || !values.confirmPassword}
           size="lg"
           style={styles.resetBtn}
         />
@@ -233,139 +231,52 @@ export default function ResetPasswordScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing['2xl'],
-  },
-  backBtn: {
-    marginBottom: Spacing.xl,
-  },
+  container: { flex: 1, backgroundColor: Colors.background },
+  scroll:    { flexGrow: 1, paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: 40 },
+  backBtn:   { marginBottom: Spacing.xl },
 
-  // ── Header ───────────────────────────────────────────────────────────────────
-  header: {
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-  },
+  header:    { alignItems: 'center', marginBottom: Spacing.xl },
   iconBox: {
-    width: 88,
-    height: 88,
-    borderRadius: Radius.xl,
+    width: 88, height: 88, borderRadius: Radius.xl,
     backgroundColor: Colors.backgroundGradientStart,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.lg,
-    ...Shadows.sm,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: Spacing.lg, ...Shadows.sm,
   },
-  iconEmoji: {
-    fontSize: 44,
-  },
+  iconEmoji: { fontSize: 44 },
   title: {
-    fontSize: FontSize['2xl'],
-    fontWeight: FontWeight.extrabold,
-    color: Colors.text,
-    marginBottom: Spacing.sm,
-    textAlign: 'center',
-    letterSpacing: -0.3,
+    fontSize: FontSize['2xl'], fontWeight: FontWeight.extrabold,
+    color: Colors.text, marginBottom: Spacing.sm,
+    textAlign: 'center', letterSpacing: -0.3,
   },
   subtitle: {
-    fontSize: FontSize.base,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: Spacing.sm,
+    fontSize: FontSize.base, color: Colors.textSecondary,
+    textAlign: 'center', lineHeight: 24, paddingHorizontal: Spacing.sm,
   },
 
-  // ── Rules box ────────────────────────────────────────────────────────────────
   rulesBox: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.lg,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    gap: 8,
+    backgroundColor: '#F9FAFB', borderRadius: Radius.md,
+    padding: Spacing.md, marginBottom: Spacing.lg,
+    borderWidth: 1, borderColor: '#E5E7EB', gap: 8,
   },
-  rulesTitle: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  ruleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  ruleIcon: {
-    fontSize: FontSize.sm,
-    color: Colors.textLight,
-    width: 16,
-  },
-  ruleIconPassed: {
-    color: Colors.success,
-  },
-  ruleText: {
-    fontSize: FontSize.sm,
-    color: Colors.textLight,
-  },
-  ruleTextPassed: {
-    color: Colors.success,
-    fontWeight: FontWeight.medium,
-  },
+  rulesTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.textSecondary, marginBottom: 4 },
+  ruleRow:    { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  ruleIcon:       { fontSize: FontSize.sm, color: Colors.textLight, width: 16 },
+  ruleIconPassed: { color: Colors.success },
+  ruleText:       { fontSize: FontSize.sm, color: Colors.textLight },
+  ruleTextPassed: { color: Colors.success, fontWeight: FontWeight.medium },
 
-  // ── Button ───────────────────────────────────────────────────────────────────
-  resetBtn: {
-    width: '100%',
-    marginTop: Spacing.sm,
-  },
+  resetBtn: { width: '100%', marginTop: Spacing.sm },
 
-  // ── Success state ─────────────────────────────────────────────────────────────
-  successContainer: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    paddingHorizontal: Spacing.lg,
-  },
-  successContent: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: Spacing['2xl'],
-  },
+  successContainer: { flex: 1, backgroundColor: Colors.background, paddingHorizontal: Spacing.lg },
+  successContent:   { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 40 },
   successIconBox: {
-    width: 110,
-    height: 110,
-    borderRadius: Radius.xl,
+    width: 110, height: 110, borderRadius: Radius.xl,
     backgroundColor: Colors.backgroundGradientStart,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.xl,
-    ...Shadows.md,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: Spacing.xl, ...Shadows.md,
   },
-  successEmoji: {
-    fontSize: 56,
-  },
-  successTitle: {
-    fontSize: FontSize['2xl'],
-    fontWeight: FontWeight.extrabold,
-    color: Colors.text,
-    marginBottom: Spacing.sm,
-    letterSpacing: -0.3,
-  },
-  successSubtitle: {
-    fontSize: FontSize.base,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: Spacing.xl,
-    paddingHorizontal: Spacing.md,
-  },
-  successBtn: {
-    width: '100%',
-  },
+  successEmoji:    { fontSize: 56 },
+  successTitle:    { fontSize: FontSize['2xl'], fontWeight: FontWeight.extrabold, color: Colors.text, marginBottom: Spacing.sm, letterSpacing: -0.3 },
+  successSubtitle: { fontSize: FontSize.base, color: Colors.textSecondary, textAlign: 'center', lineHeight: 24, marginBottom: Spacing.xl, paddingHorizontal: Spacing.md },
+  successBtn:      { width: '100%' },
 });

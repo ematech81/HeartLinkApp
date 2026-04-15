@@ -7,8 +7,9 @@ import {
   Animated,
   TouchableOpacity,
   Dimensions,
-  Image,
+  Image, 
 } from 'react-native';
+import { StatusBar } from 'react-native-web';
 import AuthService from 'services/authService';
 import AppStatusBar from 'src/component/common/AppStatusBar';
 import { Routes } from 'src/constants/appConstants';
@@ -121,7 +122,8 @@ export default function OnboardingScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <AppStatusBar theme="dark" />
+      <StatusBar/>
+      {/* <AppStatusBar theme="dark" /> */}
 
       {/* Header */}
       <View style={styles.header}>
@@ -193,7 +195,7 @@ const IMAGE_HEIGHT = height * 0.46;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    // backgroundColor: Colors.background,;l
   },
 
   // ── Header ──────────────────────────────────────────────────────────────────

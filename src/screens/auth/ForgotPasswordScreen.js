@@ -10,12 +10,12 @@ import {
   ScrollView,
 } from 'react-native';
 import Colors from 'src/constants/Colors';
-import { FontSize, FontWeight, TextStyles } from 'src/constants/Typography';
-import { AuthAPI } from 'src/services/ApiService';
-import AppStatusBar from 'src/components/common/AppStatusBar';
-import BackButton from 'src/components/common/BackButton';
-import Input from 'src/components/common/Input';
-import Button from 'src/components/common/Button';
+import { FontSize, FontWeight } from 'src/constants/topography';
+import { AuthAPI } from 'services/ApiServices';
+import AppStatusBar from 'src/component/common/AppStatusBar';
+import BackButton from 'src/component/common/BackButton';
+import Input from 'src/component/common/Input';
+import Button from 'src/component/common/Button';
 import { validateEmail, validatePhone } from 'utils/Validation';
 import { Routes } from 'src/constants/appConstants';
 import { Radius, Shadows, Spacing } from 'src/constants/layout';
@@ -45,15 +45,15 @@ export default function ForgotPasswordScreen({ navigation }) {
     try {
       if (method === 'email') {
         await AuthAPI.forgotPassword(value.trim());
+        // Navigate to reset screen — user will enter the 6-digit code from their email
+        navigation.navigate(Routes.RESET_PASSWORD);
       } else {
-        await AuthAPI.sendOtp(value.trim());
+        // Phone users don't have passwords — they log in with OTP directly
+        Alert.alert(
+          'Use Phone Sign-In',
+          'Phone accounts use OTP to sign in — no password needed. Go back and use the Phone tab on the login screen.',
+        );
       }
-      // Navigate to OTP screen, passing context so it knows to go to ResetPassword after
-      navigation.navigate(Routes.OTP, {
-        phone: method === 'phone' ? value.trim() : undefined,
-        email: method === 'email' ? value.trim() : undefined,
-        isForgotPassword: true,
-      });
     } catch (err) {
       Alert.alert('Error', err.message || 'Something went wrong. Please try again.');
     } finally {
@@ -70,7 +70,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <AppStatusBar theme="dark" />
       <ScrollView

@@ -2,13 +2,14 @@
  * HeartLink LoginScreen
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Alert, StatusBar,
+  View, Text, StyleSheet, TouchableOpacity, Alert,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
-  Image,
 } from 'react-native';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import AppStatusBar from 'src/component/common/AppStatusBar';
 import Button from 'src/component/common/Button';
 import Input from 'src/component/common/Input';
@@ -21,11 +22,21 @@ import { validateEmail, validatePassword, validatePhone } from 'utils/Validation
 import { useAuth } from 'src/store/authStore';
 import { AuthAPI } from 'services/ApiServices';
 
-// ── Configure Google Sign-In once ─────────────────────────────────────────────
-GoogleSignin.configure({
-  webClientId: '529395727102-orvff4q7raal1p72nrgt1vcjvagvumas.apps.googleusercontent.com',
-  offlineAccess: false,
-});
+// Required to close the browser popup on redirect
+WebBrowser.maybeCompleteAuthSession();
+
+// Google OAuth client IDs
+const GOOGLE_WEB_CLIENT_ID     = '529395727102-orvff4q7raal1p72nrgt1vcjvagvumas.apps.googleusercontent.com';
+// ⬇️  Paste your Android OAuth Client ID here (Google Console → Credentials → Android)
+const GOOGLE_ANDROID_CLIENT_ID = null; // TODO: replace with your Android client ID
+
+// Redirect URI — native Android client handles its own redirect, web client uses Expo proxy
+const REDIRECT_URI = GOOGLE_ANDROID_CLIENT_ID
+  ? AuthSession.makeRedirectUri({ scheme: 'heartlink', path: 'oauth2redirect' })
+  : 'https://auth.expo.io/@ematech81/heartlink-app';
+
+console.log('🔑 [Google OAuth] Redirect URI:', REDIRECT_URI);
+console.log('🔑 [Google OAuth] Using Android client:', !!GOOGLE_ANDROID_CLIENT_ID);
 
 const METHODS = [
   { id: 'email', label: '✉️  Email' },
@@ -34,16 +45,109 @@ const METHODS = [
 
 export default function LoginScreen({ navigation }) {
   const { login, googleLogin, isLoading, clearError } = useAuth();
-  const [loginMethod,    setLoginMethod]    = useState('email');
-  const [checkingPhone,  setCheckingPhone]  = useState(false);
-  const [googleLoading,  setGoogleLoading]  = useState(false);
+  const [loginMethod,   setLoginMethod]   = useState('email');
+  const [checkingPhone, setCheckingPhone] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const { values, errors, handleChange, handleBlur } = useForm(
     { email: '', password: '', phone: '' },
     { email: validateEmail, password: validatePassword, phone: validatePhone }
   );
 
-  // ── Email / password login ──────────────────────────────────────────────────
+  // ── expo-auth-session Google request ──────────────────────────────────────
+  // responseType: 'token' forces implicit grant → access_token returned directly
+  // (default in v7 may be 'code' which requires server-side exchange we don't have)
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId:        GOOGLE_WEB_CLIENT_ID,
+    ...(GOOGLE_ANDROID_CLIENT_ID && { androidClientId: GOOGLE_ANDROID_CLIENT_ID }),
+    redirectUri:     REDIRECT_URI,
+    responseType:    'token',
+    scopes:          ['openid', 'profile', 'email'],
+  });
+
+  // Handle the OAuth response once it arrives
+  useEffect(() => {
+    if (!response) return;
+
+    console.log('🔑 [Google OAuth] Response type:', response.type);
+    console.log('🔑 [Google OAuth] Response:', JSON.stringify(response, null, 2));
+
+    if (response.type === 'error') {
+      setGoogleLoading(false);
+      Alert.alert('Google Sign-In Failed', response.error?.message || 'Authentication error.');
+      return;
+    }
+
+    if (response.type === 'dismiss' || response.type === 'cancel') {
+      setGoogleLoading(false);
+      return;
+    }
+
+    if (response.type !== 'success') {
+      setGoogleLoading(false);
+      return;
+    }
+
+    // accessToken can live in different places depending on expo-auth-session version
+    const accessToken =
+      response.authentication?.accessToken ||
+      response.params?.access_token;
+
+    console.log('🔑 [Google OAuth] Access token:', accessToken ? '✅ received' : '❌ missing');
+
+    if (!accessToken) {
+      setGoogleLoading(false);
+      Alert.alert(
+        'Google Sign-In Failed',
+        'No access token received from Google. Please try again.',
+      );
+      return;
+    }
+
+    handleGoogleToken(accessToken);
+  }, [response]);
+
+  const handleGoogleToken = async (accessToken) => {
+    try {
+      const result = await googleLogin(accessToken);
+
+      if (!result.success) {
+        Alert.alert('Sign-In Failed', result.message || 'Google authentication failed.');
+        return;
+      }
+
+      if (result.isNewUser) {
+        navigation.navigate(Routes.REGISTER, {
+          googleMode:  true,
+          googleToken: result.token,
+          googleUser: {
+            name:           result.user.name,
+            email:          result.user.email,
+            profilePicture: result.user.profilePicture,
+            userId:         result.user._id,
+          },
+        });
+      }
+      // Existing user → AUTH_SUCCESS already dispatched → navigator auto-redirects
+    } catch (err) {
+      Alert.alert('Sign-In Failed', err.message || 'An unexpected error occurred.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    try {
+      await promptAsync();
+      // Response is handled in the useEffect above
+    } catch (err) {
+      setGoogleLoading(false);
+      Alert.alert('Google Sign-In Failed', err.message || 'Could not open Google sign-in.');
+    }
+  };
+
+  // ── Email / password login ─────────────────────────────────────────────────
   const handleEmailLogin = async () => {
     const emailErr = validateEmail(values.email);
     const passErr  = validatePassword(values.password);
@@ -87,55 +191,6 @@ export default function LoginScreen({ navigation }) {
       Alert.alert('Error', msg);
     } finally {
       setCheckingPhone(false);
-    }
-  };
-
-  // ── Google Sign-In ─────────────────────────────────────────────────────────
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    try {
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      const userInfo = await GoogleSignin.signIn();
-      const idToken  = userInfo?.data?.idToken ?? userInfo?.idToken;
-
-      if (!idToken) {
-        Alert.alert('Google Sign-In Failed', 'Could not retrieve authentication token.');
-        return;
-      }
-
-      const result = await googleLogin(idToken);
-
-      if (!result.success) {
-        Alert.alert('Sign-In Failed', result.message || 'Google authentication failed.');
-        return;
-      }
-
-      if (result.isNewUser) {
-        // New user — go to RegistrationScreen at step 2 to complete profile
-        navigation.navigate(Routes.REGISTER, {
-          googleMode: true,
-          googleToken: result.token,
-          googleUser: {
-            name:           result.user.name,
-            email:          result.user.email,
-            profilePicture: result.user.profilePicture,
-            userId:         result.user._id,
-          },
-        });
-      }
-      // Existing user → AUTH_SUCCESS was dispatched → navigator auto-redirects to home
-    } catch (err) {
-      if (err.code === statusCodes.SIGN_IN_CANCELLED) {
-        // User cancelled — silent, no alert
-      } else if (err.code === statusCodes.IN_PROGRESS) {
-        // Already in progress — silent
-      } else if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        Alert.alert('Google Sign-In', 'Google Play Services are not available on this device.');
-      } else {
-        Alert.alert('Google Sign-In Failed', err.message || 'An unexpected error occurred.');
-      }
-    } finally {
-      setGoogleLoading(false);
     }
   };
 
@@ -244,16 +299,19 @@ export default function LoginScreen({ navigation }) {
 
           {/* Google Sign-In */}
           <TouchableOpacity
-            style={[styles.googleBtn, googleLoading && styles.googleBtnDisabled]}
+            style={[styles.googleBtn, (googleLoading || !request) && styles.googleBtnDisabled]}
             onPress={handleGoogleSignIn}
-            disabled={googleLoading}
+            disabled={googleLoading || !request}
             activeOpacity={0.8}
           >
             {googleLoading ? (
               <ActivityIndicator color="#444" size="small" />
             ) : (
               <>
-                <Text style={styles.googleIcon}>G</Text>
+                {/* Google "G" logo using coloured letters */}
+                <View style={styles.googleLogoBox}>
+                  <Text style={styles.googleLogoText}>G</Text>
+                </View>
                 <Text style={styles.googleText}>Continue with Google</Text>
               </>
             )}
@@ -291,10 +349,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', backgroundColor: '#F3F4F6',
     borderRadius: Radius.full, padding: 4, marginBottom: Spacing.lg,
   },
-  toggleBtn:       { flex: 1, paddingVertical: 10, borderRadius: Radius.full, alignItems: 'center' },
-  toggleBtnActive: { backgroundColor: Colors.white, ...Shadows.sm },
-  toggleText:      { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.textSecondary },
-  toggleTextActive:{ color: Colors.primary, fontWeight: FontWeight.semibold },
+  toggleBtn:        { flex: 1, paddingVertical: 10, borderRadius: Radius.full, alignItems: 'center' },
+  toggleBtnActive:  { backgroundColor: Colors.white, ...Shadows.sm },
+  toggleText:       { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.textSecondary },
+  toggleTextActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
 
   form:       { marginBottom: Spacing.lg },
   forgotRow:  { alignSelf: 'flex-end', marginBottom: Spacing.lg, marginTop: -8 },
@@ -308,18 +366,20 @@ const styles = StyleSheet.create({
   // Google button
   googleBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, paddingVertical: 14, borderRadius: Radius.md,
+    gap: 12, paddingVertical: 14, borderRadius: Radius.md,
     borderWidth: 1.5, borderColor: '#E5E7EB',
     backgroundColor: Colors.white, ...Shadows.sm,
-    minHeight: 50,
+    minHeight: 52,
   },
-  googleBtnDisabled: { opacity: 0.6 },
-  googleIcon: {
-    fontSize: 18, fontWeight: '700',
-    color: '#4285F4',             // Google blue
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  googleBtnDisabled: { opacity: 0.55 },
+  googleLogoBox: {
+    width: 26, height: 26, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1.5, borderColor: '#4285F4',
   },
-  googleText: { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: Colors.text },
+  googleLogoText: { fontSize: 15, fontWeight: '800', color: '#4285F4' },
+  googleText:     { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: Colors.text },
 
   registerRow:  { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.md, marginBottom: 50 },
   registerText: { fontSize: FontSize.base, color: Colors.textSecondary },

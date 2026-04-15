@@ -22,10 +22,9 @@ import SplashScreen from 'screen/generalScreens/SplashScreen';
 import OnboardingScreen from 'screen/generalScreens/OnboardingScreen';
 import WelcomeScreen from 'screen/generalScreens/WelcomeScreen';
 import RegisterScreen from 'screen/auth/RegistrationScreen';
-import CompleteProfileScreen from 'screen/auth/RegistrationScreen'; // same component, google mode
 import LoginScreen from 'screen/auth/LoginScreen';
-import ForgotPasswordScreen from 'screen/auth/ResetPasswordScreen';
-import ResetPasswordScreen from 'screen/auth/ResetPasswordScreen';
+import ForgotPasswordScreen from 'src/screens/auth/ForgotPasswordScreen';
+import ResetPasswordScreen from 'src/screens/auth/ResetPasswordScreen';
 
 // Main screens (stubs for now)
 import HomeScreen     from 'src/screens/main/HomeScreen';
@@ -159,7 +158,7 @@ export default function AppNavigator() {
             // Google new user — force them to complete their profile before entering the app
             <Stack.Screen name="CompleteProfile">
               {(props) => (
-                <CompleteProfileScreen
+                <RegisterScreen
                   {...props}
                   route={{
                     ...props.route,
