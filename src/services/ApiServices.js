@@ -5,9 +5,11 @@ import { ApiIPAddress } from 'utils/apiIPAdrees';
 
 // export const ApiIPAddress = 'http://10.182.223.155:5000/api';
 
+const PROD_URL = 'https://heartlinkappbackend-production.up.railway.app/api';
+
 const BASE_URL = __DEV__
-  ? ApiIPAddress
-  : 'https://api.heartlink.app/api';
+  ? ApiIPAddress   // local IP for emulator/simulator dev testing
+  : PROD_URL;
 
 const api = axios.create({
   baseURL: BASE_URL,
