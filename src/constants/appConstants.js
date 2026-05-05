@@ -23,6 +23,10 @@ export const Routes = {
   PROFILE: 'Profile',
   LIKES:   'Likes',
 
+  COMMUNITY:     'Community',
+  CREATE_POST:   'CreatePost',
+  SUBSCRIPTION:  'Subscription',
+
   // Modals / Stack Screens
   USER_PROFILE: 'UserProfile',
   CHAT: 'Chat',

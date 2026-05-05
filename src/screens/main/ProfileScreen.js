@@ -149,9 +149,13 @@ export default function ProfileScreen({ navigation }) {
   const videoRef = useRef(null);
 
   // Paystack checkout state for boost
-  const [boostPaystackUrl, setBoostPaystackUrl] = useState(null);
-  const [boostTxRef,       setBoostTxRef]       = useState(null);
+  const [boostPaystackUrl,  setBoostPaystackUrl]  = useState(null);
+  const [boostTxRef,        setBoostTxRef]        = useState(null);
   const [showBoostPaystack, setShowBoostPaystack] = useState(false);
+
+  // Pending confirm (shown after WebView closes manually)
+  const [boostPendingRef,   setBoostPendingRef]   = useState(null);
+  const [boostConfirming,   setBoostConfirming]   = useState(false);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => setPhotoIndex(0));
@@ -193,14 +197,27 @@ export default function ProfileScreen({ navigation }) {
     setVideoPlaying(!videoPlaying);
   };
 
-  // Step 1: Initialize Paystack transaction for boost
-  const handleBoost = async () => {
+  // Step 1: Show pre-payment info (BoostModal already shows benefits — Alert is enough here)
+  const handleBoost = () => {
+    setShowBoost(false);
+    Alert.alert(
+      '💳 How Boost Payment Works',
+      '1. Paystack checkout will open.\n2. Complete your ₦3,000 payment.\n3. Tap "I\'ve Completed Payment" to return.\n4. Tap "Confirm Payment" to activate your boost.',
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => setShowBoost(true) },
+        { text: 'Proceed →', onPress: startBoostPayment },
+      ]
+    );
+  };
+
+  // Step 2: Initialize Paystack transaction for boost
+  const startBoostPayment = async () => {
     setBoostLoading(true);
     try {
       const data = await PaymentAPI.initializePayment('boost');
       setBoostPaystackUrl(data.authorization_url);
       setBoostTxRef(data.reference);
-      setShowBoost(false);
+      setBoostPendingRef(data.reference);
       setShowBoostPaystack(true);
     } catch (err) {
       Alert.alert('Error', err.message || 'Could not start payment. Please try again.');
@@ -209,24 +226,39 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  // Step 2: Paystack callback — verify and activate boost
+  // Step 3a: WebView auto-detected callback
   const handleBoostPaystackSuccess = async (reference) => {
     setShowBoostPaystack(false);
-    setBoostLoading(true);
+    setBoostPaystackUrl(null);
+    setBoostTxRef(null);
+    verifyBoost(reference);
+  };
+
+  // Step 3b: User manually closed WebView — keep pendingRef for confirm card
+  const handleBoostPaystackCancel = () => {
+    setShowBoostPaystack(false);
+    setBoostPaystackUrl(null);
+    setBoostTxRef(null);
+    // boostPendingRef kept — confirm card appears in profile header
+  };
+
+  // Step 4: Verify and activate boost
+  const verifyBoost = async (reference) => {
+    setBoostConfirming(true);
     try {
       const data = await PaymentAPI.verifyPayment(reference, 'boost');
-      await updateUser({
-        isBoosted:   true,
-        boostExpiry: data.boostExpiry,
-        isVerified:  true,
-      });
+      await updateUser({ isBoosted: true, boostExpiry: data.boostExpiry, isVerified: true });
+      setBoostPendingRef(null);
       Alert.alert('⚡ Profile Boosted!', 'Your profile is now featured at the top for 7 days.', [{ text: 'Awesome!' }]);
-    } catch {
-      Alert.alert('Verification Failed', 'Payment received but we could not confirm it yet. Restart the app to sync.');
+    } catch (err) {
+      const msg = (err.message || '').toLowerCase();
+      if (msg.includes('not completed') || msg.includes('mismatch')) {
+        Alert.alert('Payment Not Found', 'If you completed the payment, wait a moment and tap Confirm again.');
+      } else {
+        Alert.alert('Verification Failed', err.message || 'Could not verify. Please try again.');
+      }
     } finally {
-      setBoostLoading(false);
-      setBoostPaystackUrl(null);
-      setBoostTxRef(null);
+      setBoostConfirming(false);
     }
   };
 
@@ -313,6 +345,28 @@ export default function ProfileScreen({ navigation }) {
             )}
           </View>
 
+          {/* ── Boost confirm card ───────────────────────────────── */}
+          {boostPendingRef && (
+            <View style={styles.boostConfirmCard}>
+              <Text style={styles.boostConfirmTitle}>✅ Payment Completed?</Text>
+              <Text style={styles.boostConfirmSub}>Tap below to activate your 7-day boost instantly.</Text>
+              <TouchableOpacity
+                style={[styles.boostConfirmBtn, boostConfirming && { opacity: 0.7 }]}
+                onPress={() => verifyBoost(boostPendingRef)}
+                disabled={boostConfirming}
+                activeOpacity={0.85}
+              >
+                {boostConfirming
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.boostConfirmBtnTxt}>Confirm Boost Payment</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setBoostPendingRef(null)} style={{ paddingTop: 6 }}>
+                <Text style={styles.boostConfirmDiscard}>I did not complete payment</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* ── Edit Profile — prominent ─────────────────────────── */}
           <TouchableOpacity
             style={styles.editProfileBtn}
@@ -320,6 +374,17 @@ export default function ProfileScreen({ navigation }) {
             activeOpacity={0.85}
           >
             <Text style={styles.editProfileBtnText}>✎  Edit Profile</Text>
+          </TouchableOpacity>
+
+          {/* ── Premium / Subscription button ────────────────────── */}
+          <TouchableOpacity
+            style={styles.premiumBtn}
+            onPress={() => navigation.navigate('Subscription')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.premiumBtnText}>
+              {isSubscribed ? '👑  Manage Subscription' : '👑  Go Premium'}
+            </Text>
           </TouchableOpacity>
 
           {/* ── Boost button ─────────────────────────────────────── */}
@@ -479,11 +544,7 @@ export default function ProfileScreen({ navigation }) {
           authorizationUrl={boostPaystackUrl}
           reference={boostTxRef}
           onSuccess={handleBoostPaystackSuccess}
-          onCancel={() => {
-            setShowBoostPaystack(false);
-            setBoostPaystackUrl(null);
-            setBoostTxRef(null);
-          }}
+          onCancel={handleBoostPaystackCancel}
         />
       )}
     </View>
@@ -542,12 +603,32 @@ const styles = StyleSheet.create({
   },
   editProfileBtnText: { fontSize: 17, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
 
+  // ── Premium button ─────────────────────────────────────────────────────────
+  premiumBtn: {
+    backgroundColor: '#FFF7ED', borderWidth: 2, borderColor: '#F59E0B',
+    paddingVertical: 13, borderRadius: Radius.full, alignItems: 'center',
+    marginBottom: 10,
+  },
+  premiumBtnText: { fontSize: 15, fontWeight: '700', color: '#B45309' },
+
   // ── Boost button ───────────────────────────────────────────────────────────
   boostProfileBtn: {
     backgroundColor: '#EBF8FF', borderWidth: 2, borderColor: '#3498DB',
     paddingVertical: 13, borderRadius: Radius.full, alignItems: 'center',
   },
   boostProfileBtnText: { fontSize: 15, fontWeight: '700', color: '#3498DB' },
+
+  // ── Boost confirm card ─────────────────────────────────────────────────────
+  boostConfirmCard: {
+    backgroundColor: '#F0FDF4', borderRadius: 14, padding: 14,
+    marginHorizontal: Spacing.lg, marginBottom: 10,
+    borderWidth: 1.5, borderColor: '#86EFAC', alignItems: 'center', gap: 6,
+  },
+  boostConfirmTitle:   { fontSize: 14, fontWeight: '700', color: '#14532D' },
+  boostConfirmSub:     { fontSize: 12, color: '#166534', textAlign: 'center' },
+  boostConfirmBtn:     { backgroundColor: '#16A34A', borderRadius: 22, paddingVertical: 11, paddingHorizontal: 24, marginTop: 4 },
+  boostConfirmBtnTxt:  { color: '#fff', fontWeight: '700', fontSize: 13 },
+  boostConfirmDiscard: { fontSize: 11, color: '#9CA3AF', textDecorationLine: 'underline' },
 
   // ── Tabs ───────────────────────────────────────────────────────────────────
   tabsContainer: { flexDirection: 'row', marginHorizontal: Spacing.lg, marginBottom: 4, marginTop: Spacing.sm, backgroundColor: '#fff', borderRadius: Radius.full, padding: 4, borderWidth: 1, borderColor: '#F3F4F6' },

@@ -1,12 +1,3 @@
-/**
- * UpgradeModal
- *
- * Step-1: Show plan picker → user taps "Pay with Paystack"
- * Step-2: Backend initializes transaction → open PaystackWebView
- * Step-3: User pays → WebView detects callback → call /payment/verify
- * Step-4: Update auth store → show success
- */
-
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity,
@@ -15,6 +6,7 @@ import {
 import { PaymentAPI } from 'services/ApiServices';
 import { useAuth } from 'src/store/authStore';
 import PaystackWebView from 'src/components/PaystackWebView';
+import Colors from 'src/constants/Colors';
 
 const BENEFITS = [
   { icon: '♾️', text: 'Send unlimited messages to anyone' },
@@ -26,43 +18,105 @@ const BENEFITS = [
 ];
 
 const PLANS = [
-  {
-    id:        'monthly',
-    label:     'Monthly',
-    price:     '₦5,000',
-    per:       '/ month',
-    badge:     null,
-    highlight: false,
-  },
-  {
-    id:        'yearly',
-    label:     'Yearly',
-    price:     '₦20,000',
-    per:       '/ year',
-    badge:     '🔥 Best Value',
-    highlight: true,
-    note:      'Includes 1 week FREE profile boost!',
-  },
+  { id: 'monthly', label: 'Monthly', price: '₦5,000', per: '/ month',   badge: null,          highlight: false },
+  { id: 'yearly',  label: 'Yearly',  price: '₦20,000', per: '/ year',   badge: '🔥 Best Value', highlight: true, note: 'Includes 1 week FREE profile boost!' },
 ];
+
+// ── Pre-payment info modal ────────────────────────────────────────────────────
+function PrePaymentModal({ visible, plan, onProceed, onCancel }) {
+  const label = plan === 'yearly' ? 'Yearly Premium — ₦20,000' : 'Monthly Premium — ₦5,000';
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+      <View style={p.backdrop}>
+        <View style={p.sheet}>
+          <Text style={p.icon}>💳</Text>
+          <Text style={p.title}>How Payment Works</Text>
+          <Text style={p.planPill}>{label}</Text>
+          <View style={p.steps}>
+            {[
+              { n: '1', text: "Tap Proceed — Paystack's secure checkout will open." },
+              { n: '2', text: 'Complete your payment inside the Paystack page.' },
+              { n: '3', text: 'Tap "I\'ve Completed Payment" to return here.' },
+              { n: '4', text: 'Tap "Confirm Payment" — your Premium activates instantly.' },
+            ].map(({ n, text }) => (
+              <View key={n} style={p.stepRow}>
+                <View style={p.stepNum}><Text style={p.stepNumTxt}>{n}</Text></View>
+                <Text style={p.stepTxt}>{text}</Text>
+              </View>
+            ))}
+          </View>
+          <TouchableOpacity style={p.proceedBtn} onPress={onProceed} activeOpacity={0.85}>
+            <Text style={p.proceedBtnTxt}>Proceed to Payment →</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={p.cancelBtn} onPress={onCancel}>
+            <Text style={p.cancelBtnTxt}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Confirm card (shown after WebView closes) ─────────────────────────────────
+function ConfirmCard({ plan, reference, loading, onConfirm, onDiscard }) {
+  const label = plan === 'yearly' ? 'Yearly Premium' : 'Monthly Premium';
+  const price = plan === 'yearly' ? '₦20,000' : '₦5,000';
+  return (
+    <View style={c.card}>
+      <View style={c.headerRow}>
+        <Text style={c.icon}>✅</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={c.title}>Payment Completed?</Text>
+          <Text style={c.sub}>Tap Confirm to activate your Premium instantly.</Text>
+        </View>
+      </View>
+      <View style={c.detail}>
+        <Text style={c.detailLine}>Plan:  <Text style={c.detailVal}>{label}</Text></Text>
+        <Text style={c.detailLine}>Amount: <Text style={c.detailVal}>{price}</Text></Text>
+        <Text style={c.detailLine}>Ref:   <Text style={c.detailRef}>{reference}</Text></Text>
+      </View>
+      <TouchableOpacity
+        style={[c.confirmBtn, loading && { opacity: 0.7 }]}
+        onPress={onConfirm}
+        disabled={loading}
+        activeOpacity={0.85}
+      >
+        {loading
+          ? <ActivityIndicator color="#fff" />
+          : <Text style={c.confirmBtnTxt}>Confirm Payment</Text>
+        }
+      </TouchableOpacity>
+      <TouchableOpacity style={c.discardBtn} onPress={onDiscard}>
+        <Text style={c.discardBtnTxt}>I did not complete payment — start over</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 export default function UpgradeModal({ visible, onClose, onSuccess }) {
   const { updateUser } = useAuth();
 
-  const [loading,      setLoading]      = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState('monthly');
+  const [selectedPlan,  setSelectedPlan]  = useState('monthly');
+  const [showPreInfo,   setShowPreInfo]   = useState(false);
+  const [loading,       setLoading]       = useState(false);
+  const [confirming,    setConfirming]    = useState(false);
 
-  // Paystack checkout state
-  const [paystackUrl, setPaystackUrl]   = useState(null);
-  const [txReference,  setTxReference]  = useState(null);
-  const [showPaystack, setShowPaystack] = useState(false);
+  // Paystack state
+  const [paystackUrl,   setPaystackUrl]   = useState(null);
+  const [pendingRef,    setPendingRef]    = useState(null);
+  const [showPaystack,  setShowPaystack]  = useState(false);
 
-  // ── Step 1: initialize transaction ────────────────────────────────────────
-  const handlePayNow = async () => {
+  // ── Step 1: show pre-info ────────────────────────────────────────────────
+  const handlePayNow = () => setShowPreInfo(true);
+
+  // ── Step 2: initialize transaction ──────────────────────────────────────
+  const startPayment = async () => {
+    setShowPreInfo(false);
     setLoading(true);
     try {
       const data = await PaymentAPI.initializePayment(selectedPlan);
       setPaystackUrl(data.authorization_url);
-      setTxReference(data.reference);
+      setPendingRef(data.reference);
       setShowPaystack(true);
     } catch (err) {
       Alert.alert('Error', err.message || 'Could not start payment. Please try again.');
@@ -71,21 +125,34 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
     }
   };
 
-  // ── Step 2: WebView detected callback — verify with backend ───────────────
-  const handlePaystackSuccess = async (reference) => {
+  // ── Step 3a: WebView auto-detected callback ──────────────────────────────
+  const handlePaystackSuccess = (reference) => {
     setShowPaystack(false);
-    setLoading(true);
+    setPaystackUrl(null);
+    verifyPayment(reference);
+  };
+
+  // ── Step 3b: user manually returned (keeps pendingRef for confirm card) ──
+  const handlePaystackCancel = () => {
+    setShowPaystack(false);
+    setPaystackUrl(null);
+    // pendingRef is kept — confirm card will appear
+  };
+
+  // ── Step 4: verify & activate ────────────────────────────────────────────
+  const verifyPayment = async (reference) => {
+    setConfirming(true);
     try {
       const data = await PaymentAPI.verifyPayment(reference, selectedPlan);
 
-      // Mirror the activated state into the local auth store
       await updateUser({
         isSubscribed:       data.subscriptionExpiry ? true : undefined,
         subscriptionExpiry: data.subscriptionExpiry || undefined,
-        subscriptionPlan:   selectedPlan !== 'boost' ? selectedPlan : undefined,
+        subscriptionPlan:   selectedPlan,
         ...(data.boostExpiry ? { isBoosted: true, boostExpiry: data.boostExpiry, isVerified: true } : {}),
       });
 
+      setPendingRef(null);
       onClose();
       onSuccess?.();
       Alert.alert(
@@ -94,20 +161,21 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
         [{ text: 'Awesome!', style: 'default' }]
       );
     } catch (err) {
-      Alert.alert(
-        'Verification Failed',
-        'Payment received but we could not confirm it yet. Please restart the app — your access will activate automatically.',
-      );
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('not completed') || msg.toLowerCase().includes('mismatch')) {
+        Alert.alert(
+          'Payment Not Found',
+          'We could not confirm your payment yet. If you completed it, wait a moment and tap Confirm again.',
+        );
+      } else {
+        Alert.alert('Verification Failed', msg || 'Could not verify. Please try again.');
+      }
     } finally {
-      setLoading(false);
+      setConfirming(false);
     }
   };
 
-  const handlePaystackCancel = () => {
-    setShowPaystack(false);
-    setPaystackUrl(null);
-    setTxReference(null);
-  };
+  const discardPending = () => setPendingRef(null);
 
   return (
     <>
@@ -119,11 +187,22 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
         onRequestClose={onClose}
       >
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-
         <View style={styles.sheet}>
           <View style={styles.handle} />
 
           <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+
+            {/* ── Confirm card (after manual return) ───────────────── */}
+            {pendingRef && (
+              <ConfirmCard
+                plan={selectedPlan}
+                reference={pendingRef}
+                loading={confirming}
+                onConfirm={() => verifyPayment(pendingRef)}
+                onDiscard={discardPending}
+              />
+            )}
+
             {/* Crown + headline */}
             <Text style={styles.crown}>👑</Text>
             <Text style={styles.title}>HeartLink Premium</Text>
@@ -156,9 +235,7 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
                     {plan.price}
                   </Text>
                   <Text style={styles.planPer}>{plan.per}</Text>
-                  {plan.note && (
-                    <Text style={styles.planNote}>{plan.note}</Text>
-                  )}
+                  {plan.note && <Text style={styles.planNote}>{plan.note}</Text>}
                   {selectedPlan === plan.id && (
                     <View style={styles.planCheckmark}>
                       <Text style={styles.planCheckmarkText}>✓</Text>
@@ -182,9 +259,9 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
 
             {/* CTA */}
             <TouchableOpacity
-              style={[styles.subscribeBtn, loading && styles.subscribeBtnLoading]}
+              style={[styles.subscribeBtn, (loading || confirming) && styles.subscribeBtnLoading]}
               onPress={handlePayNow}
-              disabled={loading}
+              disabled={loading || confirming}
               activeOpacity={0.85}
             >
               {loading
@@ -209,12 +286,20 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
         </View>
       </Modal>
 
+      {/* ── Pre-payment info ──────────────────────────────────────────── */}
+      <PrePaymentModal
+        visible={showPreInfo}
+        plan={selectedPlan}
+        onProceed={startPayment}
+        onCancel={() => setShowPreInfo(false)}
+      />
+
       {/* ── Paystack checkout WebView ──────────────────────────────────── */}
       {showPaystack && paystackUrl && (
         <PaystackWebView
           visible={showPaystack}
           authorizationUrl={paystackUrl}
-          reference={txReference}
+          reference={pendingRef}
           onSuccess={handlePaystackSuccess}
           onCancel={handlePaystackCancel}
         />
@@ -223,19 +308,48 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
   );
 }
 
+// ── Pre-payment modal styles ───────────────────────────────────────────────────
+const p = StyleSheet.create({
+  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet:      { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36, alignItems: 'center', gap: 8 },
+  icon:       { fontSize: 36, marginBottom: 4 },
+  title:      { fontSize: 18, fontWeight: '800', color: '#111827' },
+  planPill:   { backgroundColor: '#F0FDF4', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 5, fontSize: 13, color: '#15803D', fontWeight: '700', overflow: 'hidden' },
+  steps:      { width: '100%', gap: 10, marginTop: 6 },
+  stepRow:    { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  stepNum:    { width: 24, height: 24, borderRadius: 12, backgroundColor: '#FF4B7A', alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0 },
+  stepNumTxt: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  stepTxt:    { flex: 1, fontSize: 13, color: '#374151', lineHeight: 20 },
+  proceedBtn: { width: '100%', height: 52, borderRadius: 26, backgroundColor: '#FF4B7A', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  proceedBtnTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  cancelBtn:  { paddingVertical: 10 },
+  cancelBtnTxt: { fontSize: 13, color: '#9CA3AF', fontWeight: '500' },
+});
+
+// ── Confirm card styles ────────────────────────────────────────────────────────
+const c = StyleSheet.create({
+  card:        { backgroundColor: '#F0FDF4', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1.5, borderColor: '#86EFAC', gap: 10 },
+  headerRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  icon:        { fontSize: 26 },
+  title:       { fontSize: 14, fontWeight: '700', color: '#14532D' },
+  sub:         { fontSize: 11, color: '#166534', marginTop: 2 },
+  detail:      { backgroundColor: '#DCFCE7', borderRadius: 10, padding: 10, gap: 3 },
+  detailLine:  { fontSize: 12, color: '#374151' },
+  detailVal:   { fontWeight: '700', color: '#111827' },
+  detailRef:   { fontWeight: '600', color: '#6B7280', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  confirmBtn:  { height: 48, borderRadius: 24, backgroundColor: '#16A34A', alignItems: 'center', justifyContent: 'center' },
+  confirmBtnTxt: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  discardBtn:  { alignItems: 'center', paddingVertical: 4 },
+  discardBtnTxt: { fontSize: 11, color: '#9CA3AF', textDecorationLine: 'underline' },
+});
+
+// ── Sheet styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
   sheet: {
-    position:  'absolute',
-    bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 22,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 28,
-    paddingTop: 12,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 22, paddingBottom: Platform.OS === 'ios' ? 40 : 28, paddingTop: 12,
     maxHeight: '92%',
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.12, shadowRadius: 16 },
@@ -248,7 +362,6 @@ const styles = StyleSheet.create({
   title:    { fontSize: 22, fontWeight: '800', color: '#2D3436', textAlign: 'center', letterSpacing: -0.5 },
   subtitle: { fontSize: 13, color: '#888', textAlign: 'center', marginTop: 4, marginBottom: 18, lineHeight: 19, paddingHorizontal: 10 },
 
-  // ── Plan cards ─────────────────────────────────────────────────────────────
   plansRow:          { flexDirection: 'row', gap: 10, marginBottom: 20 },
   planCard:          { flex: 1, borderRadius: 16, padding: 14, alignItems: 'center', borderWidth: 2, borderColor: '#F0E0E6', backgroundColor: '#FFFAFA', position: 'relative' },
   planCardActive:    { borderColor: '#FF4B7A', backgroundColor: '#FFF0F3' },
@@ -264,17 +377,15 @@ const styles = StyleSheet.create({
   planCheckmark:     { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: '#FF4B7A', alignItems: 'center', justifyContent: 'center' },
   planCheckmarkText: { fontSize: 10, color: '#fff', fontWeight: '700' },
 
-  // ── Benefits ───────────────────────────────────────────────────────────────
   benefitsList:    { marginBottom: 18 },
   benefitRow:      { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   benefitIconWrap: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#FFF0F3', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   benefitIcon:     { fontSize: 15 },
   benefitText:     { flex: 1, fontSize: 13, color: '#444', fontWeight: '500' },
 
-  // ── CTA ────────────────────────────────────────────────────────────────────
   subscribeBtn: {
-    height: 52, borderRadius: 26,
-    backgroundColor: '#FF4B7A', alignItems: 'center', justifyContent: 'center',
+    height: 52, borderRadius: 26, backgroundColor: '#FF4B7A',
+    alignItems: 'center', justifyContent: 'center',
     ...Platform.select({
       ios:     { shadowColor: '#FF4B7A', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 12 },
       android: { elevation: 6 },
@@ -285,7 +396,6 @@ const styles = StyleSheet.create({
   subscribeBtnText:    { fontSize: 15, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
   ctaLock:             { fontSize: 15 },
   priceNote:           { fontSize: 11, color: '#A0A0A0', textAlign: 'center', marginTop: 8 },
-
-  laterBtn:  { alignSelf: 'center', paddingVertical: 12 },
-  laterText: { fontSize: 13, color: '#A0A0A0', fontWeight: '500' },
+  laterBtn:            { alignSelf: 'center', paddingVertical: 12 },
+  laterText:           { fontSize: 13, color: '#A0A0A0', fontWeight: '500' },
 });

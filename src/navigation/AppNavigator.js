@@ -27,18 +27,21 @@ import ForgotPasswordScreen from 'src/screens/auth/ForgotPasswordScreen';
 import ResetPasswordScreen from 'src/screens/auth/ResetPasswordScreen';
 
 // Main screens (stubs for now)
-import HomeScreen     from 'src/screens/main/HomeScreen';
-import DiscoverScreen from 'src/screens/main/DiscoverScreen';
-import MatchesScreen  from 'src/screens/main/MatchesScreen';
-import MessagesScreen from 'src/screens/main/MessagesScreen';
-import ProfileScreen  from 'src/screens/main/ProfileScreen';
-import LikesScreen    from 'src/screens/main/LikesScreen';
+import HomeScreen      from 'src/screens/main/HomeScreen';
+import DiscoverScreen  from 'src/screens/main/DiscoverScreen';
+import CommunityScreen from 'src/screens/main/CommunityScreen';
+import MatchesScreen   from 'src/screens/main/MatchesScreen';
+import MessagesScreen  from 'src/screens/main/MessagesScreen';
+import ProfileScreen   from 'src/screens/main/ProfileScreen';
+import LikesScreen     from 'src/screens/main/LikesScreen';
+import CreatePostScreen from 'src/screens/main/CreatePostScreen';
 import { useAuth } from 'src/store/authStore';
 import OTPScreen from 'src/screens/auth/OtpScreen';
 import ChatScreen from 'screen/main/ChatScreen';
 import UserProfileScreen from 'screen/main/UserProfileScreen';
 import MatchScreen from 'screen/generalScreens/MatchScreen';
 import EditProfileScreen from 'screen/main/EditProfileScreen';
+import SubscriptionScreen from 'src/screens/main/SubscriptionScreen';
 // import ChatScreen from 'src/screens/main/ChatScreen';
 
 
@@ -61,11 +64,12 @@ function MainTabs() {
   const insets = useSafeAreaInsets();           // ← get device insets
 
   const tabs = [
-    { name: Routes.HOME,     component: HomeScreen,     label: 'Swipe',    icon: '🔥' },
-    { name: Routes.DISCOVER, component: DiscoverScreen, label: 'Discover', icon: '🔍' },
-    { name: Routes.MATCHES,  component: MatchesScreen,  label: 'Matches',  icon: '💕' },
-    { name: Routes.MESSAGES, component: MessagesScreen, label: 'Messages', icon: '💬' },
-    { name: Routes.LIKES,    component: LikesScreen,    label: 'Likes',    icon: '❤️' },
+    { name: Routes.HOME,      component: HomeScreen,      label: 'Swipe',      icon: '🔥' },
+    { name: Routes.DISCOVER,  component: DiscoverScreen,  label: 'Discover',   icon: '🔍' },
+    { name: Routes.COMMUNITY, component: CommunityScreen, label: 'Community',  icon: '🎬' },
+    { name: Routes.MATCHES,   component: MatchesScreen,   label: 'Matches',    icon: '💕' },
+    { name: Routes.MESSAGES,  component: MessagesScreen,  label: 'Messages',   icon: '💬' },
+    { name: Routes.LIKES,     component: LikesScreen,     label: 'Likes',      icon: '❤️' },
   ];
 
   return (
@@ -119,7 +123,7 @@ function AuthenticatedShell({ children, navigationRef }) {
         showBoostWarning={showBoostExpiryWarning}
         subDaysLeft={subDaysLeft}
         boostDaysLeft={boostDaysLeft}
-        onRenewSub={() => navigationRef?.current?.navigate('Profile')}
+        onRenewSub={() => navigationRef?.current?.navigate('Subscription')}
       />
     </View>
   );
@@ -191,6 +195,8 @@ export default function AppNavigator() {
                       options={{ presentation: 'transparentModal', animation: 'fade', headerShown: false }}
                     />
                     <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+                    <Stack.Screen name={Routes.SUBSCRIPTION} component={SubscriptionScreen} />
+                    <Stack.Screen name={Routes.CREATE_POST} component={CreatePostScreen} options={{ presentation: 'modal' }} />
                     <Stack.Screen name={Routes.PROFILE} component={ProfileScreen} />
                   </Stack.Navigator>
                 </AuthenticatedShell>
@@ -227,7 +233,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     paddingTop: 6,
   },
-  tabLabel: { fontSize: 10, fontWeight: '500' },
+  tabLabel: { fontSize: 9, fontWeight: '500' },
 });
 
 

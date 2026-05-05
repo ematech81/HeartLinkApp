@@ -118,16 +118,26 @@ export const MessageAPI = {
 // Payment Endpoints
 // ─────────────────────────────────────────────────────────────────────────────
 export const PaymentAPI = {
-  // ── Paystack checkout (real money) ─────────────────────────────────────────
-  initializePayment: (plan)          => api.post('/payment/initialize', { plan }),
+  initializePayment: (plan)            => api.post('/payment/initialize', { plan }),
   verifyPayment:     (reference, plan) => api.post('/payment/verify', { reference, plan }),
+  subscribe:      (plan = 'monthly')   => api.post('/payment/subscribe', { plan }),
+  boostProfile:   ()                   => api.post('/payment/boost'),
+  getTopProfiles: ()                   => api.get('/payment/top-profiles'),
+  getStatus:      ()                   => api.get('/payment/status'),
+  runExpiryCheck: ()                   => api.post('/payment/run-expiry'),
+};
 
-  // ── Legacy endpoints ───────────────────────────────────────────────────────
-  subscribe:      (plan = 'monthly') => api.post('/payment/subscribe', { plan }),
-  boostProfile:   ()                 => api.post('/payment/boost'),
-  getTopProfiles: ()                 => api.get('/payment/top-profiles'),
-  getStatus:      ()                 => api.get('/payment/status'),
-  runExpiryCheck: ()                 => api.post('/payment/run-expiry'),
+// ─────────────────────────────────────────────────────────────────────────────
+// Community Endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+export const CommunityAPI = {
+  getFeed:       (page = 1, limit = 10) => api.get('/community/feed', { params: { page, limit } }),
+  createPost:    (data)                 => api.post('/community/posts', data),
+  toggleLike:    (postId)               => api.post(`/community/posts/${postId}/like`),
+  recordView:    (postId)               => api.post(`/community/posts/${postId}/view`),
+  deletePost:    (postId)               => api.delete(`/community/posts/${postId}`),
+  getMyPosts:    ()                     => api.get('/community/posts/mine'),
+  getUserPosts:  (userId)               => api.get(`/community/posts/user/${userId}`),
 };
 
 export default api;

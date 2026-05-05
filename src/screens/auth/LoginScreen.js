@@ -27,8 +27,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 // Google OAuth client IDs
 const GOOGLE_WEB_CLIENT_ID     = '529395727102-orvff4q7raal1p72nrgt1vcjvagvumas.apps.googleusercontent.com';
-// ⬇️  Paste your Android OAuth Client ID here (Google Console → Credentials → Android)
-const GOOGLE_ANDROID_CLIENT_ID = null; // TODO: replace with your Android client ID
+const GOOGLE_ANDROID_CLIENT_ID = '114769987830-rss1hfqerm67rdk4q6gl74shoos1mes3.apps.googleusercontent.com';
 
 // Redirect URI — native Android client handles its own redirect, web client uses Expo proxy
 const REDIRECT_URI = GOOGLE_ANDROID_CLIENT_ID
