@@ -120,8 +120,8 @@ export const MessageAPI = {
 // Payment Endpoints
 // ─────────────────────────────────────────────────────────────────────────────
 export const PaymentAPI = {
-  initializePayment: (plan)            => api.post('/payment/initialize', { plan }),
-  verifyPayment:     (reference, plan) => api.post('/payment/verify', { reference, plan }),
+  initializePayment: (plan)          => api.post('/payment/initialize', { plan }),
+  verifyPayment:     (tx_ref, plan)  => api.post('/payment/verify', { tx_ref, plan }),
   subscribe:      (plan = 'monthly')   => api.post('/payment/subscribe', { plan }),
   boostProfile:   ()                   => api.post('/payment/boost'),
   getTopProfiles: ()                   => api.get('/payment/top-profiles'),

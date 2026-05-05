@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PaymentAPI } from 'services/ApiServices';
 import { useAuth } from 'src/store/authStore';
-import PaystackWebView from 'src/components/PaystackWebView';
+import FlutterwaveWebView from 'src/components/FlutterwaveWebView';
 import Colors from 'src/constants/Colors';
 
 const stillActive = (d) => d && new Date(d) > new Date();
@@ -54,8 +54,8 @@ function PrePaymentModal({ visible, plan, isBoost, onProceed, onCancel }) {
 
           <View style={p.steps}>
             {[
-              { n: '1', text: "Tap Proceed — Paystack's secure checkout will open." },
-              { n: '2', text: 'Complete your payment inside the Paystack page.' },
+              { n: '1', text: "Tap Proceed — Flutterwave's secure checkout will open." },
+              { n: '2', text: 'Complete your payment inside the Flutterwave page.' },
               { n: '3', text: 'Tap "I\'ve Completed Payment" to return here.' },
               { n: '4', text: 'Tap "Confirm Payment" — your access activates instantly.' },
             ].map(({ n, text }) => (
@@ -174,11 +174,11 @@ export default function SubscriptionScreen({ navigation }) {
   // Payment in-flight
   const [paying,        setPaying]        = useState(false);
   const [payingBoost,   setPayingBoost]   = useState(false);
-  const [paystackUrl,   setPaystackUrl]   = useState(null);
+  const [paymentLink,   setPaymentLink]   = useState(null);
   const [showWV,        setShowWV]        = useState(false);
 
   // Pending confirm (shown after WebView closes)
-  const [pendingRef,    setPendingRef]    = useState(null);
+  const [pendingTxRef,  setPendingTxRef]  = useState(null);
   const [pendingPlan,   setPendingPlan]   = useState(null);
   const [confirming,    setConfirming]    = useState(false);
 
@@ -212,7 +212,7 @@ export default function SubscriptionScreen({ navigation }) {
     setShowPreInfo(true);
   };
 
-  // ── Step 2: initialize Paystack transaction ─────────────────────────────────
+  // ── Step 2: initialize Flutterwave transaction ──────────────────────────────
   const startPayment = async () => {
     setShowPreInfo(false);
     const plan = pendingIsBoost ? 'boost' : selectedPlan;
@@ -220,8 +220,8 @@ export default function SubscriptionScreen({ navigation }) {
     setL(true);
     try {
       const data = await PaymentAPI.initializePayment(plan);
-      setPaystackUrl(data.authorization_url);
-      setPendingRef(data.reference);
+      setPaymentLink(data.payment_link);
+      setPendingTxRef(data.tx_ref);
       setPendingPlan(plan);
       setShowWV(true);
     } catch (err) {
@@ -231,27 +231,25 @@ export default function SubscriptionScreen({ navigation }) {
     }
   };
 
-  // ── Step 3: WebView closed (manually or via callback) ──────────────────────
-  const handleWebViewSuccess = (reference) => {
-    // Auto-detected callback — go straight to verify
+  // ── Step 3: WebView closed (auto-redirect or manual confirm) ───────────────
+  const handleWebViewSuccess = (txRef) => {
     setShowWV(false);
-    setPaystackUrl(null);
-    verifyPayment(reference, pendingPlan);
+    setPaymentLink(null);
+    verifyPayment(txRef, pendingPlan);
   };
 
   const handleWebViewCancel = () => {
-    // User tapped Back — keep pendingRef so they can confirm manually
+    // User tapped Back — keep pendingTxRef so they can confirm manually
     setShowWV(false);
-    setPaystackUrl(null);
-    // Scroll to top so the ConfirmCard is visible
+    setPaymentLink(null);
     setTimeout(() => scrollRef.current?.scrollTo({ y: 0, animated: true }), 300);
   };
 
   // ── Step 4: verify & activate ───────────────────────────────────────────────
-  const verifyPayment = async (reference, plan) => {
+  const verifyPayment = async (txRef, plan) => {
     setConfirming(true);
     try {
-      const data = await PaymentAPI.verifyPayment(reference, plan);
+      const data = await PaymentAPI.verifyPayment(txRef, plan);
 
       const patch = {};
       if (plan !== 'boost') {
@@ -273,7 +271,7 @@ export default function SubscriptionScreen({ navigation }) {
       await fetchStatus();
 
       // Clear pending state
-      setPendingRef(null);
+      setPendingTxRef(null);
       setPendingPlan(null);
 
       Alert.alert(
@@ -297,7 +295,7 @@ export default function SubscriptionScreen({ navigation }) {
   };
 
   const discardPending = () => {
-    setPendingRef(null);
+    setPendingTxRef(null);
     setPendingPlan(null);
   };
 
@@ -331,13 +329,13 @@ export default function SubscriptionScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
         >
           {/* ── Pending confirm card ──────────────────────────────────── */}
-          {pendingRef && (
+          {pendingTxRef && (
             <ConfirmCard
               plan={pendingPlan}
               isBoost={pendingPlan === 'boost'}
-              reference={pendingRef}
+              reference={pendingTxRef}
               loading={confirming}
-              onConfirm={() => verifyPayment(pendingRef, pendingPlan)}
+              onConfirm={() => verifyPayment(pendingTxRef, pendingPlan)}
               onDiscard={discardPending}
             />
           )}
@@ -408,7 +406,7 @@ export default function SubscriptionScreen({ navigation }) {
             }
           </TouchableOpacity>
 
-          <Text style={s.secureNote}>🔒 Secure payment via Paystack</Text>
+          <Text style={s.secureNote}>🔒 Secure payment via Flutterwave</Text>
 
           {/* ── Boost section ─────────────────────────────────────────── */}
           <View style={s.divider} />
@@ -447,12 +445,12 @@ export default function SubscriptionScreen({ navigation }) {
         onCancel={() => setShowPreInfo(false)}
       />
 
-      {/* ── Paystack WebView ──────────────────────────────────────────── */}
-      {showWV && paystackUrl && (
-        <PaystackWebView
+      {/* ── Flutterwave WebView ───────────────────────────────────────── */}
+      {showWV && paymentLink && (
+        <FlutterwaveWebView
           visible={showWV}
-          authorizationUrl={paystackUrl}
-          reference={pendingRef}
+          paymentLink={paymentLink}
+          txRef={pendingTxRef}
           onSuccess={handleWebViewSuccess}
           onCancel={handleWebViewCancel}
         />
