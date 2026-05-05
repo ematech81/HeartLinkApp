@@ -35,6 +35,12 @@ function groupByAuthor(posts) {
 // ── Single media slide (one post) ────────────────────────────────────────────
 function PostSlide({ post, isVisible, height }) {
   const H = height || Dimensions.get('window').height;
+  const [paused, setPaused] = useState(false);
+
+  // Reset to playing when this slide scrolls off screen
+  useEffect(() => {
+    if (!isVisible) setPaused(false);
+  }, [isVisible]);
 
   const hrs     = Math.floor((post.timeLeft || 0) / 3600000);
   const min     = Math.floor(((post.timeLeft || 0) % 3600000) / 60000);
@@ -50,7 +56,7 @@ function PostSlide({ post, isVisible, height }) {
           resizeMode={ResizeMode.COVER}
           isLooping
           isMuted={false}
-          shouldPlay={isVisible}
+          shouldPlay={isVisible && !paused}
         />
       ) : (
         <Image
@@ -85,6 +91,17 @@ function PostSlide({ post, isVisible, height }) {
         <View style={s.captionWrap}>
           <Text style={s.captionTxt} numberOfLines={3}>{post.caption}</Text>
         </View>
+      )}
+
+      {/* Play / Pause toggle — videos only */}
+      {post.mediaType === 'video' && (
+        <TouchableOpacity
+          style={s.playPauseBtn}
+          onPress={() => setPaused((p) => !p)}
+          activeOpacity={0.8}
+        >
+          <Text style={s.playPauseIcon}>{paused ? '▶️' : '⏸️'}</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -339,13 +356,19 @@ export default function CommunityScreen({ navigation }) {
         setNudgeType('first_post');
       } else {
         const daysSince = (Date.now() - new Date(mine[0]?.createdAt)) / 86400000;
-        if (daysSince >= 3) setNudgeType('inactive');
+        if (daysSince >= 3) {
+          setNudgeType('inactive');
+        } else {
+          setNudgeType(null); // recently posted — dismiss any lingering nudge
+        }
       }
     } catch {}
   }, [canPost]);
 
-  useFocusEffect(useCallback(() => { fetchFeed(1, true); }, [fetchFeed]));
-  useEffect(() => { checkNudge(); }, [checkNudge]);
+  useFocusEffect(useCallback(() => {
+    fetchFeed(1, true);
+    checkNudge();
+  }, [fetchFeed, checkNudge]));
 
   // Record view when active profile changes
   useEffect(() => {
@@ -597,6 +620,14 @@ const s = StyleSheet.create({
   actionItem: { alignItems: 'center', gap: 3 },
   actionIcon: { fontSize: 30 },
   actionCount: { color: '#fff', fontSize: 11, fontWeight: FontWeight.semibold },
+
+  // ── Play / Pause button ───────────────────────────────────────────────────────
+  playPauseBtn: {
+    position: 'absolute', bottom: 110, left: 16,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 24,
+    width: 48, height: 48, alignItems: 'center', justifyContent: 'center',
+  },
+  playPauseIcon: { fontSize: 22 },
 
   // ── Expiry strip ──────────────────────────────────────────────────────────────
   expiryStrip: {

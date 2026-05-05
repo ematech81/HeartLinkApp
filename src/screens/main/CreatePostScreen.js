@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, Alert, ActivityIndicator, Image, Dimensions, Platform,
@@ -6,63 +6,42 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Video, ResizeMode } from 'expo-av';
 import Colors from 'src/constants/Colors';
-import { Spacing, Radius, Shadows } from 'src/constants/layout';
+import { Spacing, Radius } from 'src/constants/layout';
 import { FontSize, FontWeight } from 'src/constants/topography';
 import AppStatusBar from 'src/component/common/AppStatusBar';
 import { CommunityAPI } from 'services/ApiServices';
 import { uploadProfilePicture, uploadVideo } from 'src/utils/uploadImage';
 
-const SCREEN_W   = Dimensions.get('window').width;
-const PREVIEW_W  = SCREEN_W - Spacing.lg * 2;
-const PREVIEW_H  = Math.round(PREVIEW_W * (16 / 9));
-
-const PROMPTS = [
-  { id: '1', icon: '👋', text: 'Introduce yourself in 30 seconds' },
-  { id: '2', icon: '💕', text: 'What are you looking for in a partner?' },
-  { id: '3', icon: '✨', text: 'What makes you unique?' },
-  { id: '4', icon: '🎵', text: 'Your vibe today' },
-  { id: '5', icon: '📅', text: 'A day in my life' },
-  { id: '6', icon: '📍', text: 'My favourite place' },
-  { id: '7', icon: '😂', text: 'Make someone laugh' },
-  { id: '8', icon: '🎯', text: 'My biggest goal right now' },
-];
+const SCREEN_W  = Dimensions.get('window').width;
+const PREVIEW_W = SCREEN_W - Spacing.lg * 2;
+const PREVIEW_H = Math.round(PREVIEW_W * (16 / 9));
 
 export default function CreatePostScreen({ navigation }) {
-  const [selectedPrompt, setSelectedPrompt] = useState(null);
-  const [media,          setMedia]          = useState(null); // { uri, type }
-  const [caption,        setCaption]        = useState('');
-  const [uploading,      setUploading]      = useState(false);
-  const [step,           setStep]           = useState(1);
-
-  // Belt-and-suspenders: whenever media is set, ensure we're on step 2
-  useEffect(() => {
-    if (media) setStep(2);
-  }, [media]);
+  const [media,     setMedia]     = useState(null); // { uri, type }
+  const [caption,   setCaption]   = useState('');
+  const [uploading, setUploading] = useState(false);
 
   const pickMedia = async (type) => {
     const options = {
       mediaTypes: type === 'video'
         ? ImagePicker.MediaTypeOptions.Videos
         : ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: type === 'video', // no forced crop for images
+      allowsEditing: type === 'video',
       quality: 0.85,
       ...(type === 'video' && { videoMaxDuration: 60 }),
     };
     try {
       const result = await ImagePicker.launchImageLibraryAsync(options);
       if (!result.canceled && result.assets?.[0]) {
-        // Set both together; useEffect above is the fallback if Android resets step
         setMedia({ uri: result.assets[0].uri, type });
-        setStep(2);
       }
-    } catch (err) {
+    } catch {
       Alert.alert('Error', 'Could not open media library. Please try again.');
     }
   };
 
   const handlePost = async () => {
     if (!media) { Alert.alert('Add media', 'Please pick a photo or video first.'); return; }
-
     setUploading(true);
     try {
       let mediaUrl;
@@ -71,14 +50,11 @@ export default function CreatePostScreen({ navigation }) {
       } else {
         mediaUrl = await uploadProfilePicture(media.uri, 'heartlink/community');
       }
-
       await CommunityAPI.createPost({
         mediaUrl,
         mediaType: media.type,
         caption:   caption.trim(),
-        prompt:    selectedPrompt?.text || '',
       });
-
       Alert.alert('Posted!', 'Your post is live for 24 hours.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
@@ -90,63 +66,12 @@ export default function CreatePostScreen({ navigation }) {
     }
   };
 
-  // ── Step 1: Choose prompt ─────────────────────────────────────────────────
-  if (step === 1) {
-    return (
-      <View style={styles.container}>
-        <AppStatusBar theme="dark" />
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeBtn}>
-            <Text style={styles.closeTxt}>✕</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Choose a Prompt</Text>
-          <TouchableOpacity onPress={() => setStep(2)} style={styles.skipBtn}>
-            <Text style={styles.skipTxt}>Skip</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.promptSubtitle}>
-          Prompts help you show your personality — the key to better matches.
-        </Text>
-
-        <ScrollView contentContainerStyle={styles.promptList} showsVerticalScrollIndicator={false}>
-          {PROMPTS.map((p) => (
-            <TouchableOpacity
-              key={p.id}
-              style={[styles.promptRow, selectedPrompt?.id === p.id && styles.promptRowActive]}
-              onPress={() => setSelectedPrompt(p)}
-              activeOpacity={0.75}
-            >
-              <Text style={styles.promptIcon}>{p.icon}</Text>
-              <Text style={[styles.promptText, selectedPrompt?.id === p.id && styles.promptTextActive]}>
-                {p.text}
-              </Text>
-              {selectedPrompt?.id === p.id && <Text style={styles.checkmark}>✓</Text>}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.nextBtn, !selectedPrompt && styles.nextBtnDisabled]}
-            onPress={() => setStep(2)}
-            disabled={!selectedPrompt}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.nextBtnTxt}>Next →</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // ── Step 2: Add media + caption ───────────────────────────────────────────
   return (
     <View style={styles.container}>
       <AppStatusBar theme="dark" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => setStep(1)} style={styles.closeBtn}>
-          <Text style={styles.closeTxt}>←</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeBtn}>
+          <Text style={styles.closeTxt}>✕</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Create Post</Text>
         <TouchableOpacity
@@ -161,33 +86,27 @@ export default function CreatePostScreen({ navigation }) {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.step2Content}
+        contentContainerStyle={styles.content}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Selected prompt badge */}
-        {selectedPrompt && (
-          <View style={styles.selectedPromptBadge}>
-            <Text style={styles.selectedPromptIcon}>{selectedPrompt.icon}</Text>
-            <Text style={styles.selectedPromptText}>{selectedPrompt.text}</Text>
-          </View>
-        )}
-
-        {/* Media preview — explicit dimensions so it always renders */}
         {media ? (
           <View style={styles.previewBox}>
             {media.type === 'video' ? (
               <Video
+                key={media.uri}
                 source={{ uri: media.uri }}
                 style={styles.preview}
                 resizeMode={ResizeMode.COVER}
                 useNativeControls
-                shouldPlay={false}
+                shouldPlay
+                isLooping
                 isMuted={false}
               />
             ) : (
               <Image
+                key={media.uri}
                 source={{ uri: media.uri }}
                 style={styles.preview}
                 resizeMode="cover"
@@ -214,7 +133,6 @@ export default function CreatePostScreen({ navigation }) {
           </View>
         )}
 
-        {/* Caption */}
         <View style={styles.captionBox}>
           <TextInput
             style={styles.captionInput}
@@ -228,7 +146,6 @@ export default function CreatePostScreen({ navigation }) {
           <Text style={styles.charCount}>{caption.length}/300</Text>
         </View>
 
-        {/* Info */}
         <View style={styles.infoBox}>
           <Text style={styles.infoTxt}>⏱  This post will disappear after 24 hours</Text>
           <Text style={styles.infoTxt}>👁  Other members can view your profile from this post</Text>
@@ -248,53 +165,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
     backgroundColor: Colors.white,
   },
-  closeBtn:    { padding: 4, width: 36 },
-  closeTxt:    { fontSize: 18, color: Colors.text },
-  headerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
-  skipBtn:     { padding: 4 },
-  skipTxt:     { fontSize: FontSize.sm, color: Colors.textSecondary },
-  postBtn:     { backgroundColor: Colors.primary, paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: Radius.full },
+  closeBtn:        { padding: 4, width: 36 },
+  closeTxt:        { fontSize: 18, color: Colors.text },
+  headerTitle:     { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
+  postBtn:         { backgroundColor: Colors.primary, paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: Radius.full },
   postBtnDisabled: { opacity: 0.4 },
-  postBtnTxt:  { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
+  postBtnTxt:      { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
 
-  // Step 1
-  promptSubtitle: {
-    fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center',
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, lineHeight: 20,
-  },
-  promptList: { paddingHorizontal: Spacing.lg, paddingBottom: 100 },
-  promptRow: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-    backgroundColor: Colors.white, borderRadius: Radius.md,
-    padding: Spacing.md, marginBottom: Spacing.sm,
-    borderWidth: 1.5, borderColor: '#F3F4F6',
-    ...Shadows.sm,
-  },
-  promptRowActive:  { borderColor: Colors.primary, backgroundColor: '#FFF1F3' },
-  promptIcon:       { fontSize: 22, width: 32, textAlign: 'center' },
-  promptText:       { flex: 1, fontSize: FontSize.base, color: Colors.text, lineHeight: 20 },
-  promptTextActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
-  checkmark:        { fontSize: 16, color: Colors.primary, fontWeight: FontWeight.bold },
-  footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: Colors.white, padding: Spacing.lg,
-    borderTopWidth: 1, borderTopColor: '#F3F4F6',
-  },
-  nextBtn:         { backgroundColor: Colors.primary, borderRadius: Radius.full, paddingVertical: 14, alignItems: 'center' },
-  nextBtnDisabled: { opacity: 0.4 },
-  nextBtnTxt:      { color: Colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.base },
+  content: { padding: Spacing.lg, paddingBottom: 40, gap: Spacing.lg },
 
-  // Step 2
-  step2Content: { padding: Spacing.lg, paddingBottom: 40, gap: Spacing.lg },
-  selectedPromptBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: '#FFF1F3', borderRadius: Radius.md,
-    padding: Spacing.md, borderWidth: 1, borderColor: '#FECDD3',
-  },
-  selectedPromptIcon: { fontSize: 20 },
-  selectedPromptText: { flex: 1, fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold },
-
-  // ── Media preview — explicit fixed dimensions ────────────────────────────────
   previewBox: {
     width:  PREVIEW_W,
     height: PREVIEW_H,
@@ -303,8 +182,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#111',
     alignSelf: 'center',
   },
-  preview:     { width: PREVIEW_W, height: PREVIEW_H },
-  changeMedia: {
+  preview:        { width: PREVIEW_W, height: PREVIEW_H },
+  changeMedia:    {
     position: 'absolute', top: 12, right: 12,
     backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: Radius.full,
