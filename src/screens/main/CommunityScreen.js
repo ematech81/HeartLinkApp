@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Video, ResizeMode } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import Colors from 'src/constants/Colors';
 import { FontSize, FontWeight } from 'src/constants/topography';
 import { Spacing, Radius } from 'src/constants/layout';
@@ -253,9 +253,9 @@ function NudgeCard({ type, onPost, onUpgrade, onDismiss }) {
     },
     non_boosted: {
       icon: '🚀',
-      title: 'Show your personality',
-      body: '"Posting in Community helps you get more matches" — Top profiles post daily.',
-      cta: 'Upgrade & Post',
+      title: 'Boost your visibility',
+      body: 'You\'re already posting — boost your profile to appear at the top and get 3× more matches.',
+      cta: 'Boost My Profile',
       action: onUpgrade,
       bg: '#F5F3FF',
       border: '#C4B5FD',
@@ -308,12 +308,12 @@ function EmptyFeed({ isBoosted, onPost, onUpgrade }) {
       <Text style={s.emptyTitle}>Show your personality</Text>
       <Text style={s.emptySub}>
         Posting in Community helps you get more matches.{'\n'}
-        Upgrade to Boost to share your vibe.
+        Subscribe to unlock posting and all premium features.
       </Text>
       <TouchableOpacity style={[s.emptyBtn, { backgroundColor: Colors.primary }]} onPress={onUpgrade} activeOpacity={0.85}>
-        <Text style={s.emptyBtnTxt}>Upgrade & Post</Text>
+        <Text style={s.emptyBtnTxt}>Subscribe to Post</Text>
       </TouchableOpacity>
-      <Text style={s.emptySocialProof}>Users who post get 3× more matches 🔥</Text>
+      <Text style={s.emptySocialProof}>Members who post get 3× more matches 🔥</Text>
     </View>
   );
 }
@@ -336,7 +336,9 @@ export default function CommunityScreen({ navigation }) {
   const [nudgeType,    setNudgeType]    = useState(null);
   const [myPostCount,  setMyPostCount]  = useState(null); // null = not fetched yet
 
-  const isBoosted = !!(user?.isBoosted && new Date(user?.boostExpiry) > new Date());
+  const isSubscribed = !!(user?.isSubscribed && (!user.subscriptionExpiry || new Date(user.subscriptionExpiry) > new Date()));
+  const isBoosted    = !!(user?.isBoosted    && new Date(user?.boostExpiry) > new Date());
+  const canPost      = isSubscribed; // boost = visibility only; subscription required to post
 
   // ── Fetch feed ──────────────────────────────────────────────────────────────
   const fetchFeed = useCallback(async (pageNum = 1, refresh = false) => {
@@ -361,8 +363,8 @@ export default function CommunityScreen({ navigation }) {
 
   // ── Determine which nudge to show (max 1 per day) ──────────────────────────
   const checkNudge = useCallback(async () => {
-    if (!isBoosted) {
-      // Non-boosted users see the upgrade nudge in the banner — no extra card needed
+    if (!canPost) {
+      // Non-subscribers see the upgrade nudge in the banner — no extra card needed
       return;
     }
     try {
@@ -393,9 +395,13 @@ export default function CommunityScreen({ navigation }) {
     } catch {
       // Silently fail — nudges are non-critical
     }
-  }, [isBoosted]);
+  }, [canPost]);
 
-  useEffect(() => { fetchFeed(1); }, []);
+  // Refresh feed every time this screen comes into focus (covers return from CreatePost).
+  // Use refresh=true to avoid a full loading screen on re-entry.
+  useFocusEffect(
+    useCallback(() => { fetchFeed(1, true); }, [fetchFeed])
+  );
   useEffect(() => { checkNudge(); }, [checkNudge]);
 
   // Record view when a post becomes visible
@@ -408,7 +414,7 @@ export default function CommunityScreen({ navigation }) {
       AsyncStorage.getItem(SCROLL_KEY).then((raw) => {
         const next = (parseInt(raw || '0', 10) + 1).toString();
         AsyncStorage.setItem(SCROLL_KEY, next);
-        if (parseInt(next, 10) >= 5 && !nudgeType && isBoosted && myPostCount !== null && myPostCount > 0) {
+        if (parseInt(next, 10) >= 5 && !nudgeType && canPost && myPostCount !== null && myPostCount > 0) {
           setNudgeType('passive');
         }
       });
@@ -455,7 +461,7 @@ export default function CommunityScreen({ navigation }) {
   };
 
   const handleCreatePost = () => {
-    if (!isBoosted) { setShowUpgrade(true); return; }
+    if (!canPost) { setShowUpgrade(true); return; }
     navigation.navigate(Routes.CREATE_POST);
   };
 
@@ -466,7 +472,7 @@ export default function CommunityScreen({ navigation }) {
         item={item}
         isVisible={index === visibleIndex && isFocused}
         isOwn={isOwn}
-        isBoosted={isBoosted}
+        isBoosted={isBoosted}  // keeps boost-specific AnalyticsBar CTA
         onLike={handleLike}
         onViewProfile={handleViewProfile}
         onMessage={handleMessage}
@@ -519,18 +525,18 @@ export default function CommunityScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Non-boosted upgrade banner */}
-      {!isBoosted && (
+      {/* Subscribe banner — shown to non-subscribers who can't post yet */}
+      {!canPost && (
         <TouchableOpacity style={s.boostBanner} onPress={() => setShowUpgrade(true)} activeOpacity={0.85}>
           <Text style={s.boostBannerTxt}>
-            🚀  Users who post get 3× more matches — Upgrade & Post
+            ✨  Subscribe to unlock posting · Members who post get 3× more matches
           </Text>
         </TouchableOpacity>
       )}
 
       {/* Feed */}
       {posts.length === 0 ? (
-        <EmptyFeed isBoosted={isBoosted} onPost={handleCreatePost} onUpgrade={() => setShowUpgrade(true)} />
+        <EmptyFeed isBoosted={canPost} onPost={handleCreatePost} onUpgrade={() => setShowUpgrade(true)} />
       ) : (
         <FlatList
           data={posts}

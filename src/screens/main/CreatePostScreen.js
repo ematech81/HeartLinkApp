@@ -4,6 +4,7 @@ import {
   TextInput, Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Video, ResizeMode } from 'expo-av';
 import Colors from 'src/constants/Colors';
 import { Spacing, Radius, Shadows } from 'src/constants/layout';
 import { FontSize, FontWeight } from 'src/constants/topography';
@@ -34,7 +35,7 @@ export default function CreatePostScreen({ navigation }) {
       mediaTypes: type === 'video'
         ? ImagePicker.MediaTypeOptions.Videos
         : ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      allowsEditing: type === 'video', // no forced crop for images
       quality: 0.8,
       ...(type === 'video' && { videoMaxDuration: 60 }),
     };
@@ -159,11 +160,17 @@ export default function CreatePostScreen({ navigation }) {
         {/* Media preview / picker */}
         {media ? (
           <View style={styles.previewBox}>
-            <Image source={{ uri: media.uri }} style={styles.preview} resizeMode="cover" />
-            {media.type === 'video' && (
-              <View style={styles.videoOverlay}>
-                <Text style={styles.videoIcon}>▶</Text>
-              </View>
+            {media.type === 'video' ? (
+              <Video
+                source={{ uri: media.uri }}
+                style={styles.preview}
+                resizeMode={ResizeMode.COVER}
+                useNativeControls
+                shouldPlay={false}
+                isMuted={false}
+              />
+            ) : (
+              <Image source={{ uri: media.uri }} style={styles.preview} resizeMode="cover" />
             )}
             <TouchableOpacity style={styles.changeMedia} onPress={() => setMedia(null)}>
               <Text style={styles.changeMediaTxt}>Change</Text>

@@ -258,8 +258,13 @@ export default function SubscriptionScreen({ navigation }) {
         patch.isSubscribed       = true;
         patch.subscriptionExpiry = data.subscriptionExpiry;
         patch.subscriptionPlan   = plan;
+        patch.isVerified         = true;
       }
       if (data.boostExpiry) {
+        patch.isBoosted   = true;
+        patch.boostExpiry = data.boostExpiry;
+      }
+      if (plan === 'boost') {
         patch.isBoosted   = true;
         patch.boostExpiry = data.boostExpiry;
         patch.isVerified  = true;

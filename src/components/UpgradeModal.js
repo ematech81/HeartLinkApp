@@ -146,10 +146,11 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
       const data = await PaymentAPI.verifyPayment(reference, selectedPlan);
 
       await updateUser({
-        isSubscribed:       data.subscriptionExpiry ? true : undefined,
-        subscriptionExpiry: data.subscriptionExpiry || undefined,
+        isSubscribed:       true,
+        subscriptionExpiry: data.subscriptionExpiry,
         subscriptionPlan:   selectedPlan,
-        ...(data.boostExpiry ? { isBoosted: true, boostExpiry: data.boostExpiry, isVerified: true } : {}),
+        isVerified:         true,
+        ...(data.boostExpiry ? { isBoosted: true, boostExpiry: data.boostExpiry } : {}),
       });
 
       setPendingRef(null);
