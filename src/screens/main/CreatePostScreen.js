@@ -42,6 +42,7 @@ export default function CreatePostScreen({ navigation }) {
     const result = await ImagePicker.launchImageLibraryAsync(options);
     if (!result.canceled && result.assets?.[0]) {
       setMedia({ uri: result.assets[0].uri, type });
+      setStep(2); // Android activity restart can reset step to 1; force back to step 2
     }
   };
 
@@ -68,7 +69,11 @@ export default function CreatePostScreen({ navigation }) {
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (err) {
-      Alert.alert('Error', err.message || 'Failed to post. Please try again.');
+      const msg = err.message || 'Failed to post. Please try again.';
+      Alert.alert(
+        err.status === 403 ? 'Subscription Required' : 'Post Failed',
+        msg,
+      );
     } finally {
       setUploading(false);
     }
