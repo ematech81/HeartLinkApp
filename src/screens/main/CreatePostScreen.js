@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Alert, ActivityIndicator, Image, KeyboardAvoidingView, Platform,
+  TextInput, Alert, ActivityIndicator, Image, Dimensions, Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Video, ResizeMode } from 'expo-av';
@@ -11,6 +11,10 @@ import { FontSize, FontWeight } from 'src/constants/topography';
 import AppStatusBar from 'src/component/common/AppStatusBar';
 import { CommunityAPI } from 'services/ApiServices';
 import { uploadProfilePicture, uploadVideo } from 'src/utils/uploadImage';
+
+const SCREEN_W   = Dimensions.get('window').width;
+const PREVIEW_W  = SCREEN_W - Spacing.lg * 2;
+const PREVIEW_H  = Math.round(PREVIEW_W * (16 / 9));
 
 const PROMPTS = [
   { id: '1', icon: '👋', text: 'Introduce yourself in 30 seconds' },
@@ -25,10 +29,15 @@ const PROMPTS = [
 
 export default function CreatePostScreen({ navigation }) {
   const [selectedPrompt, setSelectedPrompt] = useState(null);
-  const [media,          setMedia]          = useState(null); // { uri, type: 'video'|'image' }
+  const [media,          setMedia]          = useState(null); // { uri, type }
   const [caption,        setCaption]        = useState('');
   const [uploading,      setUploading]      = useState(false);
-  const [step,           setStep]           = useState(1); // 1=prompt, 2=media+caption
+  const [step,           setStep]           = useState(1);
+
+  // Belt-and-suspenders: whenever media is set, ensure we're on step 2
+  useEffect(() => {
+    if (media) setStep(2);
+  }, [media]);
 
   const pickMedia = async (type) => {
     const options = {
@@ -36,13 +45,18 @@ export default function CreatePostScreen({ navigation }) {
         ? ImagePicker.MediaTypeOptions.Videos
         : ImagePicker.MediaTypeOptions.Images,
       allowsEditing: type === 'video', // no forced crop for images
-      quality: 0.8,
+      quality: 0.85,
       ...(type === 'video' && { videoMaxDuration: 60 }),
     };
-    const result = await ImagePicker.launchImageLibraryAsync(options);
-    if (!result.canceled && result.assets?.[0]) {
-      setMedia({ uri: result.assets[0].uri, type });
-      setStep(2); // Android activity restart can reset step to 1; force back to step 2
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync(options);
+      if (!result.canceled && result.assets?.[0]) {
+        // Set both together; useEffect above is the fallback if Android resets step
+        setMedia({ uri: result.assets[0].uri, type });
+        setStep(2);
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Could not open media library. Please try again.');
     }
   };
 
@@ -70,10 +84,7 @@ export default function CreatePostScreen({ navigation }) {
       ]);
     } catch (err) {
       const msg = err.message || 'Failed to post. Please try again.';
-      Alert.alert(
-        err.status === 403 ? 'Subscription Required' : 'Post Failed',
-        msg,
-      );
+      Alert.alert(err.status === 403 ? 'Subscription Required' : 'Post Failed', msg);
     } finally {
       setUploading(false);
     }
@@ -131,7 +142,7 @@ export default function CreatePostScreen({ navigation }) {
 
   // ── Step 2: Add media + caption ───────────────────────────────────────────
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View style={styles.container}>
       <AppStatusBar theme="dark" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setStep(1)} style={styles.closeBtn}>
@@ -151,6 +162,7 @@ export default function CreatePostScreen({ navigation }) {
 
       <ScrollView
         contentContainerStyle={styles.step2Content}
+        keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -162,7 +174,7 @@ export default function CreatePostScreen({ navigation }) {
           </View>
         )}
 
-        {/* Media preview / picker */}
+        {/* Media preview — explicit dimensions so it always renders */}
         {media ? (
           <View style={styles.previewBox}>
             {media.type === 'video' ? (
@@ -175,7 +187,11 @@ export default function CreatePostScreen({ navigation }) {
                 isMuted={false}
               />
             ) : (
-              <Image source={{ uri: media.uri }} style={styles.preview} resizeMode="cover" />
+              <Image
+                source={{ uri: media.uri }}
+                style={styles.preview}
+                resizeMode="cover"
+              />
             )}
             <TouchableOpacity style={styles.changeMedia} onPress={() => setMedia(null)}>
               <Text style={styles.changeMediaTxt}>Change</Text>
@@ -218,7 +234,7 @@ export default function CreatePostScreen({ navigation }) {
           <Text style={styles.infoTxt}>👁  Other members can view your profile from this post</Text>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -227,24 +243,24 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg, paddingTop: 52, paddingBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg, paddingTop: Platform.OS === 'android' ? 44 : 52,
+    paddingBottom: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
     backgroundColor: Colors.white,
   },
-  closeBtn:     { padding: 4, width: 36 },
-  closeTxt:     { fontSize: 18, color: Colors.text },
-  headerTitle:  { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
-  skipBtn:      { padding: 4 },
-  skipTxt:      { fontSize: FontSize.sm, color: Colors.textSecondary },
-  postBtn:      { backgroundColor: Colors.primary, paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: Radius.full },
+  closeBtn:    { padding: 4, width: 36 },
+  closeTxt:    { fontSize: 18, color: Colors.text },
+  headerTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
+  skipBtn:     { padding: 4 },
+  skipTxt:     { fontSize: FontSize.sm, color: Colors.textSecondary },
+  postBtn:     { backgroundColor: Colors.primary, paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: Radius.full },
   postBtnDisabled: { opacity: 0.4 },
-  postBtnTxt:   { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
+  postBtnTxt:  { color: Colors.white, fontWeight: FontWeight.semibold, fontSize: FontSize.sm },
 
   // Step 1
   promptSubtitle: {
     fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center',
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
-    lineHeight: 20,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, lineHeight: 20,
   },
   promptList: { paddingHorizontal: Spacing.lg, paddingBottom: 100 },
   promptRow: {
@@ -254,25 +270,22 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#F3F4F6',
     ...Shadows.sm,
   },
-  promptRowActive: { borderColor: Colors.primary, backgroundColor: '#FFF1F3' },
-  promptIcon:      { fontSize: 22, width: 32, textAlign: 'center' },
-  promptText:      { flex: 1, fontSize: FontSize.base, color: Colors.text, lineHeight: 20 },
-  promptTextActive:{ color: Colors.primary, fontWeight: FontWeight.semibold },
-  checkmark:       { fontSize: 16, color: Colors.primary, fontWeight: FontWeight.bold },
+  promptRowActive:  { borderColor: Colors.primary, backgroundColor: '#FFF1F3' },
+  promptIcon:       { fontSize: 22, width: 32, textAlign: 'center' },
+  promptText:       { flex: 1, fontSize: FontSize.base, color: Colors.text, lineHeight: 20 },
+  promptTextActive: { color: Colors.primary, fontWeight: FontWeight.semibold },
+  checkmark:        { fontSize: 16, color: Colors.primary, fontWeight: FontWeight.bold },
   footer: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: Colors.white, padding: Spacing.lg,
     borderTopWidth: 1, borderTopColor: '#F3F4F6',
   },
-  nextBtn: {
-    backgroundColor: Colors.primary, borderRadius: Radius.full,
-    paddingVertical: 14, alignItems: 'center',
-  },
+  nextBtn:         { backgroundColor: Colors.primary, borderRadius: Radius.full, paddingVertical: 14, alignItems: 'center' },
   nextBtnDisabled: { opacity: 0.4 },
-  nextBtnTxt: { color: Colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.base },
+  nextBtnTxt:      { color: Colors.white, fontWeight: FontWeight.bold, fontSize: FontSize.base },
 
   // Step 2
-  step2Content: { padding: Spacing.lg, gap: Spacing.lg, paddingBottom: 40 },
+  step2Content: { padding: Spacing.lg, paddingBottom: 40, gap: Spacing.lg },
   selectedPromptBadge: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     backgroundColor: '#FFF1F3', borderRadius: Radius.md,
@@ -281,14 +294,31 @@ const styles = StyleSheet.create({
   selectedPromptIcon: { fontSize: 20 },
   selectedPromptText: { flex: 1, fontSize: FontSize.sm, color: Colors.primary, fontWeight: FontWeight.semibold },
 
+  // ── Media preview — explicit fixed dimensions ────────────────────────────────
+  previewBox: {
+    width:  PREVIEW_W,
+    height: PREVIEW_H,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    backgroundColor: '#111',
+    alignSelf: 'center',
+  },
+  preview:     { width: PREVIEW_W, height: PREVIEW_H },
+  changeMedia: {
+    position: 'absolute', top: 12, right: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: Radius.full,
+  },
+  changeMediaTxt: { color: '#fff', fontSize: FontSize.xs, fontWeight: FontWeight.semibold },
+
   mediaPicker: {
     backgroundColor: Colors.white, borderRadius: Radius.lg,
     padding: Spacing.xl, alignItems: 'center',
     borderWidth: 2, borderColor: '#F3F4F6', borderStyle: 'dashed',
     gap: Spacing.sm,
   },
-  mediaTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
-  mediaHint:  { fontSize: FontSize.sm, color: Colors.textSecondary },
+  mediaTitle:   { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.text },
+  mediaHint:    { fontSize: FontSize.sm, color: Colors.textSecondary },
   mediaButtons: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md },
   mediaBtn: {
     flex: 1, backgroundColor: '#F9FAFB', borderRadius: Radius.md,
@@ -297,20 +327,6 @@ const styles = StyleSheet.create({
   },
   mediaBtnIcon: { fontSize: 28 },
   mediaBtnTxt:  { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.text },
-
-  previewBox:   { borderRadius: Radius.lg, overflow: 'hidden', position: 'relative', aspectRatio: 9 / 16 },
-  preview:      { width: '100%', height: '100%' },
-  videoOverlay: {
-    ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  videoIcon:    { fontSize: 40, color: Colors.white },
-  changeMedia: {
-    position: 'absolute', top: 12, right: 12,
-    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: Radius.full,
-  },
-  changeMediaTxt: { color: Colors.white, fontSize: FontSize.xs, fontWeight: FontWeight.semibold },
 
   captionBox: {
     backgroundColor: Colors.white, borderRadius: Radius.md,

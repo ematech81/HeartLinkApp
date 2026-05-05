@@ -1004,9 +1004,6 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.myAvatarRing} />
           </TouchableOpacity>
 
-          {/* Brand wordmark */}
-          <Text style={styles.brandMark}>spark</Text>
-
           {/* Filter / notification icon */}
           <TouchableOpacity
             style={styles.filterBtn}

@@ -325,7 +325,7 @@ export function PhotoManager({ photos, onPhotosChange, isOwner = false }) {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function UserProfileScreen({ navigation, route }) {
   const insets       = useSafeAreaInsets();
-  const { user: me, updateUser } = useAuth();
+  const { user: me, updateUser, logout } = useAuth();
 
   const paramProfile = route?.params?.profile ?? null;
   const userId       = route?.params?.userId  ?? paramProfile?._id ?? paramProfile?.id;
@@ -350,7 +350,6 @@ export default function UserProfileScreen({ navigation, route }) {
 
     UserAPI.getById(userId)
       .then((data) => { if (data?.user) setProfile(data.user); else setError('Not found.'); })
-        console.log('👤 Fetched profile introVideo:', data.user.introVideo)
       .catch((err)  => setError(err?.message || 'Failed to load.'))
       .finally(()   => setLoading(false));
   }, [userId]);
@@ -721,6 +720,15 @@ const handleVideoChange = async (url) => {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* ── Logout (owner only) ──────────────────────────────────── */}
+          {isOwner && (
+            <View style={styles.logoutSection}>
+              <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
+                <Text style={styles.logoutText}>Log Out</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -891,6 +899,11 @@ const styles = StyleSheet.create({
   thumbAddText: { fontSize: FontSize.xs, color: Colors.primary, fontWeight: FontWeight.medium },
   photoCount:   { fontSize: FontSize.xs, color: Colors.textLight, marginTop: Spacing.sm },
   photoCountHint: { color: Colors.primary },
+
+  // Logout (owner)
+  logoutSection: { marginTop: Spacing.lg, marginBottom: Spacing.xl },
+  logoutBtn:     { backgroundColor: '#FEF2F2', paddingVertical: 14, borderRadius: Radius.md, alignItems: 'center', borderWidth: 1, borderColor: '#FECACA' },
+  logoutText:    { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: '#EF4444' },
 
   // Report / Block row
   dangerRow:   { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm, marginBottom: Spacing.lg },
