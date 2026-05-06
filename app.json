@@ -20,7 +20,7 @@
       },
       "package": "com.heartlink.app",
       "versionCode": 1,
-      "newArchEnabled": false,
+      "newArchEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",
