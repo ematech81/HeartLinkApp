@@ -16,12 +16,21 @@ class SocketService {
   }
 
   // ── Connect and identify user ─────────────────────────────────────────────
-  connect(userId) {
+  // `token` is required — the server verifies it (same JWT as REST calls) and
+  // derives the socket's identity from it. It no longer trusts a client-
+  // supplied userId, so passing one without a valid token will just get the
+  // connection rejected (see server.js io.use() auth middleware).
+  connect(userId, token) {
     if (this.socket?.connected && this.userId === userId) return;
+    if (!token) {
+      console.log('❌ [Socket] Cannot connect: no auth token available.');
+      return;
+    }
 
     this.userId = userId;
 
     this.socket = io(SOCKET_URL, {
+      auth:               { token },
       transports:        ['websocket'],
       reconnection:      true,
       reconnectionDelay: 1000,
@@ -30,7 +39,6 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('🔌 [Socket] Connected:', this.socket.id);
-      this.socket.emit('user:join', userId);
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -43,7 +51,8 @@ class SocketService {
 
     this.socket.on('reconnect', (attempt) => {
       console.log(`🔄 [Socket] Reconnected after ${attempt} attempts`);
-      this.socket.emit('user:join', userId);
+      // No re-join emit needed — the server re-authenticates and re-joins
+      // this socket's personal room automatically on every new connection.
     });
   }
 
@@ -59,32 +68,36 @@ class SocketService {
   }
 
   // ── Join a chat room ──────────────────────────────────────────────────────
-  joinRoom(userId, otherUserId) {
+  // NOTE: `userId` (own id) params below are kept in the method signatures so
+  // existing call sites don't need to change, but are no longer sent on the
+  // wire — the server derives "who is this" from the authenticated socket
+  // (see server.js), never from a client-supplied field.
+  joinRoom(_userId, otherUserId) {
     if (!this.socket?.connected) return;
-    this.socket.emit('chat:join', { userId, otherUserId });
+    this.socket.emit('chat:join', { otherUserId });
   }
 
   // ── Send a message ────────────────────────────────────────────────────────
-  sendMessage(senderId, receiverId, message, tempId) {
+  sendMessage(_senderId, receiverId, message, tempId) {
     if (!this.socket?.connected) return;
-    this.socket.emit('message:send', { senderId, receiverId, message, tempId });
+    this.socket.emit('message:send', { receiverId, message, tempId });
   }
 
   // ── Typing indicators ─────────────────────────────────────────────────────
-  startTyping(senderId, receiverId) {
+  startTyping(_senderId, receiverId) {
     if (!this.socket?.connected) return;
-    this.socket.emit('typing:start', { senderId, receiverId });
+    this.socket.emit('typing:start', { receiverId });
   }
 
-  stopTyping(senderId, receiverId) {
+  stopTyping(_senderId, receiverId) {
     if (!this.socket?.connected) return;
-    this.socket.emit('typing:stop', { senderId, receiverId });
+    this.socket.emit('typing:stop', { receiverId });
   }
 
   // ── Mark messages as read ─────────────────────────────────────────────────
-  markAsRead(readerId, senderId) {
+  markAsRead(_readerId, senderId) {
     if (!this.socket?.connected) return;
-    this.socket.emit('message:read', { readerId, senderId });
+    this.socket.emit('message:read', { senderId });
   }
 
   // ── Listen for incoming messages ──────────────────────────────────────────

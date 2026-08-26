@@ -390,6 +390,11 @@ export default function RegisterScreen({ navigation, route }) {
           numberOfKids: numberOfKids ? Number(numberOfKids) : undefined,
           kidsAges:     kidsAges.length ? kidsAges : undefined,
         }),
+        // Reaching handleRegister at all means allAgreed was true (the
+        // "Agree & Create Account" button is disabled otherwise) — this just
+        // carries that fact to the backend, which stamps its own timestamp
+        // as the durable consent record rather than trusting one from here.
+        agreedToTerms: true,
       };
 
       if (googleMode) {

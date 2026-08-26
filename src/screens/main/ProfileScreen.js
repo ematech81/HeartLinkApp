@@ -11,7 +11,7 @@ import { Spacing, Radius } from 'src/constants/layout';
 import { FontSize, FontWeight } from 'src/constants/topography';
 import { useAuth } from 'src/store/authStore';
 import { PaymentAPI } from 'services/ApiServices';
-import PaystackWebView from 'src/components/PaystackWebView';
+import KoraPayWebView from 'src/components/KoraPayWebView';
 
 const { width: W } = Dimensions.get('window');
 const HERO_H = W * 1.05;
@@ -148,10 +148,10 @@ export default function ProfileScreen({ navigation }) {
   const [boostLoading, setBoostLoading] = useState(false);
   const videoRef = useRef(null);
 
-  // Paystack checkout state for boost
-  const [boostPaystackUrl,  setBoostPaystackUrl]  = useState(null);
+  // KoraPay checkout state for boost
+  const [boostCheckoutUrl,  setBoostCheckoutUrl]  = useState(null);
   const [boostTxRef,        setBoostTxRef]        = useState(null);
-  const [showBoostPaystack, setShowBoostPaystack] = useState(false);
+  const [showBoostWebView,  setShowBoostWebView]  = useState(false);
 
   // Pending confirm (shown after WebView closes manually)
   const [boostPendingRef,   setBoostPendingRef]   = useState(null);
@@ -202,7 +202,7 @@ export default function ProfileScreen({ navigation }) {
     setShowBoost(false);
     Alert.alert(
       '💳 How Boost Payment Works',
-      '1. Paystack checkout will open.\n2. Complete your ₦3,000 payment.\n3. Tap "I\'ve Completed Payment" to return.\n4. Tap "Confirm Payment" to activate your boost.',
+      '1. KoraPay checkout will open.\n2. Complete your ₦3,000 payment.\n3. Tap "I\'ve Completed Payment" to return.\n4. Tap "Confirm Payment" to activate your boost.',
       [
         { text: 'Cancel', style: 'cancel', onPress: () => setShowBoost(true) },
         { text: 'Proceed →', onPress: startBoostPayment },
@@ -210,15 +210,20 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
-  // Step 2: Initialize Paystack transaction for boost
+  // Step 2: Initialize KoraPay transaction for boost
   const startBoostPayment = async () => {
     setBoostLoading(true);
     try {
       const data = await PaymentAPI.initializePayment('boost');
-      setBoostPaystackUrl(data.authorization_url);
+      // NOTE: this used to read `data.authorization_url` (Paystack's field
+      // name from a pre-Flutterwave version of this flow) against a backend
+      // that only ever returned `payment_link` — always undefined, so
+      // boosting from the profile screen silently dead-ended at every use.
+      // Fixed as part of the KoraPay migration.
+      setBoostCheckoutUrl(data.payment_link);
       setBoostTxRef(data.reference);
       setBoostPendingRef(data.reference);
-      setShowBoostPaystack(true);
+      setShowBoostWebView(true);
     } catch (err) {
       Alert.alert('Error', err.message || 'Could not start payment. Please try again.');
     } finally {
@@ -227,26 +232,28 @@ export default function ProfileScreen({ navigation }) {
   };
 
   // Step 3a: WebView auto-detected callback
-  const handleBoostPaystackSuccess = async (reference) => {
-    setShowBoostPaystack(false);
-    setBoostPaystackUrl(null);
+  const handleBoostWebViewSuccess = async (reference) => {
+    setShowBoostWebView(false);
+    setBoostCheckoutUrl(null);
     setBoostTxRef(null);
     verifyBoost(reference);
   };
 
   // Step 3b: User manually closed WebView — keep pendingRef for confirm card
-  const handleBoostPaystackCancel = () => {
-    setShowBoostPaystack(false);
-    setBoostPaystackUrl(null);
+  const handleBoostWebViewCancel = () => {
+    setShowBoostWebView(false);
+    setBoostCheckoutUrl(null);
     setBoostTxRef(null);
     // boostPendingRef kept — confirm card appears in profile header
   };
 
   // Step 4: Verify and activate boost
+  // 'boost' plan is only for the local optimistic patch — the backend
+  // derives the real plan from its own Transaction record, not from here.
   const verifyBoost = async (reference) => {
     setBoostConfirming(true);
     try {
-      const data = await PaymentAPI.verifyPayment(reference, 'boost');
+      const data = await PaymentAPI.verifyPayment(reference);
       await updateUser({ isBoosted: true, boostExpiry: data.boostExpiry, isVerified: true });
       setBoostPendingRef(null);
       Alert.alert('⚡ Profile Boosted!', 'Your profile is now featured at the top for 7 days.', [{ text: 'Awesome!' }]);
@@ -537,14 +544,14 @@ export default function ProfileScreen({ navigation }) {
         boostExpiry={user.boostExpiry}
       />
 
-      {/* ── Paystack checkout for boost ────────────────────────────── */}
-      {showBoostPaystack && boostPaystackUrl && (
-        <PaystackWebView
-          visible={showBoostPaystack}
-          authorizationUrl={boostPaystackUrl}
+      {/* ── KoraPay checkout for boost ─────────────────────────────── */}
+      {showBoostWebView && boostCheckoutUrl && (
+        <KoraPayWebView
+          visible={showBoostWebView}
+          paymentLink={boostCheckoutUrl}
           reference={boostTxRef}
-          onSuccess={handleBoostPaystackSuccess}
-          onCancel={handleBoostPaystackCancel}
+          onSuccess={handleBoostWebViewSuccess}
+          onCancel={handleBoostWebViewCancel}
         />
       )}
     </View>

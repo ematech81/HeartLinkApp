@@ -63,6 +63,27 @@ export const registerForPushNotifications = async () => {
   }
 };
 
+// ── Deregister this device's push token (call on logout) ─────────────────────
+// Expo push tokens are stable per device+app-install+projectId, so re-fetching
+// here (rather than requiring the caller to have kept the original token
+// around) reliably yields the same value that was registered — no extra
+// client-side storage needed just to remember it for logout.
+export const deregisterPushToken = async () => {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return; // never registered a token to begin with
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '444774b6-e0ec-4376-ae07-e3152051720e',
+    });
+    await UserAPI.removePushToken(tokenData.data);
+    console.log('📲 [Push] Token deregistered on logout');
+  } catch (err) {
+    // Best-effort — never let this block logout itself
+    console.log('⚠️ [Push] Deregister error (non-fatal):', err.message);
+  }
+};
+
 // ── Set up notification tap listener ─────────────────────────────────────────
 // Call this once in AppNavigator with a navigationRef
 export const setupNotificationListeners = (navigationRef) => {

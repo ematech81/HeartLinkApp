@@ -81,18 +81,33 @@ export const AuthAPI = {
 // User Endpoints
 // ─────────────────────────────────────────────────────────────────────────────
 export const UserAPI = {
-  search:        (params)  => api.get('/users/search', { params }),
-  getById:       (id)      => api.get(`/users/${id}`),
-  updateProfile: (data)    => api.put('/users/profile', data),
-  savePushToken: (token)   => api.put('/users/push-token', { pushToken: token }),
-  blockUser:     (userId)  => api.post(`/users/${userId}/block`),
+  search:          (params)  => api.get('/users/search', { params }),
+  getById:         (id)      => api.get(`/users/${id}`),
+  updateProfile:   (data)    => api.put('/users/profile', data),
+  savePushToken:   (token)   => api.put('/users/push-token', { pushToken: token }),
+  // Call on logout so a shared/reset device stops receiving this user's
+  // notifications after they sign out. DELETE body goes via config.data.
+  removePushToken: (token)   => api.delete('/users/push-token', { data: { pushToken: token } }),
+  blockUser:       (userId)  => api.post(`/users/${userId}/block`),
+  unblockUser:     (userId)  => api.delete(`/users/${userId}/block`),
+  getBlockedUsers: ()        => api.get('/users/blocked'),
   reportUser:    (userId, reason, description) =>
     api.post(`/users/${userId}/report`, { reason, description }),
+  // Self-service account deletion. `password` is only checked server-side
+  // for local (email/phone+password) accounts — Google-only accounts pass
+  // undefined and just need `confirm: true`. Axios sends a DELETE body via
+  // `config.data`, not a second positional arg like POST.
+  deleteAccount: (password) =>
+    api.delete('/users/me', { data: { password, confirm: true } }),
+  // NOTE: these previously pointed at '/profile/photos', which doesn't exist
+  // on the backend (the real routes are under /upload — see uploadRoutes.js)
+  // and had no caller anywhere in the app. Fixed to the real paths; still
+  // unused pending a photo-management screen wiring these up.
   uploadPhoto:   (formData) =>
-    api.post('/profile/photos', formData, {
+    api.post('/upload/photos', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
-  deletePhoto: (photoId) => api.delete(`/profile/photos/${photoId}`),
+  deletePhoto: (index) => api.delete(`/upload/photos/${index}`),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,14 +134,16 @@ export const MessageAPI = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Payment Endpoints
 // ─────────────────────────────────────────────────────────────────────────────
+// NOTE: /payment/subscribe, /payment/boost, and /payment/run-expiry are admin-only
+// on the backend (they bypass KoraPay entirely) — intentionally not exposed here.
 export const PaymentAPI = {
-  initializePayment: (plan)          => api.post('/payment/initialize', { plan }),
-  verifyPayment:     (tx_ref, plan)  => api.post('/payment/verify', { tx_ref, plan }),
-  subscribe:      (plan = 'monthly')   => api.post('/payment/subscribe', { plan }),
-  boostProfile:   ()                   => api.post('/payment/boost'),
+  initializePayment: (plan)       => api.post('/payment/initialize', { plan }),
+  // Plan is looked up server-side from the Transaction record created at
+  // initialize time — not sent here, so a client can't claim a plan it
+  // didn't actually pay for.
+  verifyPayment:  (reference)          => api.post('/payment/verify', { reference }),
   getTopProfiles: ()                   => api.get('/payment/top-profiles'),
   getStatus:      ()                   => api.get('/payment/status'),
-  runExpiryCheck: ()                   => api.post('/payment/run-expiry'),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

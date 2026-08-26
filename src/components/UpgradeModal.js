@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { PaymentAPI } from 'services/ApiServices';
 import { useAuth } from 'src/store/authStore';
-import PaystackWebView from 'src/components/PaystackWebView';
+import KoraPayWebView from 'src/components/KoraPayWebView';
 import Colors from 'src/constants/Colors';
 
 const BENEFITS = [
@@ -34,8 +34,8 @@ function PrePaymentModal({ visible, plan, onProceed, onCancel }) {
           <Text style={p.planPill}>{label}</Text>
           <View style={p.steps}>
             {[
-              { n: '1', text: "Tap Proceed — Paystack's secure checkout will open." },
-              { n: '2', text: 'Complete your payment inside the Paystack page.' },
+              { n: '1', text: "Tap Proceed — KoraPay's secure checkout will open." },
+              { n: '2', text: 'Complete your payment inside the KoraPay page.' },
               { n: '3', text: 'Tap "I\'ve Completed Payment" to return here.' },
               { n: '4', text: 'Tap "Confirm Payment" — your Premium activates instantly.' },
             ].map(({ n, text }) => (
@@ -101,10 +101,10 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
   const [loading,       setLoading]       = useState(false);
   const [confirming,    setConfirming]    = useState(false);
 
-  // Paystack state
-  const [paystackUrl,   setPaystackUrl]   = useState(null);
+  // KoraPay checkout state
+  const [checkoutUrl,   setCheckoutUrl]   = useState(null);
   const [pendingRef,    setPendingRef]    = useState(null);
-  const [showPaystack,  setShowPaystack]  = useState(false);
+  const [showWebView,   setShowWebView]   = useState(false);
 
   // ── Step 1: show pre-info ────────────────────────────────────────────────
   const handlePayNow = () => setShowPreInfo(true);
@@ -115,9 +115,15 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
     setLoading(true);
     try {
       const data = await PaymentAPI.initializePayment(selectedPlan);
-      setPaystackUrl(data.authorization_url);
+      // NOTE: this used to read `data.authorization_url` (Paystack's field
+      // name from a pre-Flutterwave version of this flow) against a backend
+      // that only ever returned `payment_link` — always undefined, so this
+      // entire modal — the app's main contextual paywall, wired into six
+      // screens — silently dead-ended at every use. Fixed as part of the
+      // KoraPay migration.
+      setCheckoutUrl(data.payment_link);
       setPendingRef(data.reference);
-      setShowPaystack(true);
+      setShowWebView(true);
     } catch (err) {
       Alert.alert('Error', err.message || 'Could not start payment. Please try again.');
     } finally {
@@ -126,24 +132,27 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
   };
 
   // ── Step 3a: WebView auto-detected callback ──────────────────────────────
-  const handlePaystackSuccess = (reference) => {
-    setShowPaystack(false);
-    setPaystackUrl(null);
+  const handleWebViewSuccess = (reference) => {
+    setShowWebView(false);
+    setCheckoutUrl(null);
     verifyPayment(reference);
   };
 
   // ── Step 3b: user manually returned (keeps pendingRef for confirm card) ──
-  const handlePaystackCancel = () => {
-    setShowPaystack(false);
-    setPaystackUrl(null);
+  const handleWebViewCancel = () => {
+    setShowWebView(false);
+    setCheckoutUrl(null);
     // pendingRef is kept — confirm card will appear
   };
 
   // ── Step 4: verify & activate ────────────────────────────────────────────
+  // `selectedPlan` here is only for the local optimistic state patch below —
+  // the backend independently derives the real plan from its own Transaction
+  // record (created at initialize time), never from this client-side value.
   const verifyPayment = async (reference) => {
     setConfirming(true);
     try {
-      const data = await PaymentAPI.verifyPayment(reference, selectedPlan);
+      const data = await PaymentAPI.verifyPayment(reference);
 
       await updateUser({
         isSubscribed:       true,
@@ -182,7 +191,7 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
     <>
       {/* ── Main plan-picker sheet ─────────────────────────────────────── */}
       <Modal
-        visible={visible && !showPaystack}
+        visible={visible && !showWebView}
         animationType="slide"
         transparent
         onRequestClose={onClose}
@@ -270,7 +279,7 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
                 : (
                   <View style={styles.ctaInner}>
                     <Text style={styles.subscribeBtnText}>
-                      Pay {PLANS.find((p) => p.id === selectedPlan)?.price} with Paystack
+                      Pay {PLANS.find((p) => p.id === selectedPlan)?.price} with KoraPay
                     </Text>
                     <Text style={styles.ctaLock}>🔒</Text>
                   </View>
@@ -278,7 +287,7 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
               }
             </TouchableOpacity>
 
-            <Text style={styles.priceNote}>Secure payment via Paystack · Cancel anytime</Text>
+            <Text style={styles.priceNote}>Secure payment via KoraPay · Cancel anytime</Text>
 
             <TouchableOpacity onPress={onClose} style={styles.laterBtn}>
               <Text style={styles.laterText}>Maybe Later</Text>
@@ -295,14 +304,14 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
         onCancel={() => setShowPreInfo(false)}
       />
 
-      {/* ── Paystack checkout WebView ──────────────────────────────────── */}
-      {showPaystack && paystackUrl && (
-        <PaystackWebView
-          visible={showPaystack}
-          authorizationUrl={paystackUrl}
+      {/* ── KoraPay checkout WebView ───────────────────────────────────── */}
+      {showWebView && checkoutUrl && (
+        <KoraPayWebView
+          visible={showWebView}
+          paymentLink={checkoutUrl}
           reference={pendingRef}
-          onSuccess={handlePaystackSuccess}
-          onCancel={handlePaystackCancel}
+          onSuccess={handleWebViewSuccess}
+          onCancel={handleWebViewCancel}
         />
       )}
     </>

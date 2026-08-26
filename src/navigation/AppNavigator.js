@@ -131,17 +131,19 @@ function AuthenticatedShell({ children, navigationRef }) {
 
 // ── Root navigator ────────────────────────────────────────────────────────
 export default function AppNavigator() {
-  const { isAuthenticated, isInitializing, user } = useAuth();
+  const { isAuthenticated, isInitializing, user, token } = useAuth();
   const navigationRef = useRef(null);
 
   // ── Connect/disconnect socket with auth state ─────────────────────────────
+  // Passing `token` lets the server verify identity itself (see server.js) —
+  // the socket is no longer trusted to say who it is just by sending a userId.
   useEffect(() => {
-    if (isAuthenticated && user?._id) {
-      SocketService.connect(user._id);
+    if (isAuthenticated && user?._id && token) {
+      SocketService.connect(user._id, token);
     } else {
       SocketService.disconnect();
     }
-  }, [isAuthenticated, user?._id]);
+  }, [isAuthenticated, user?._id, token]);
 
   // ── Register push notifications when user logs in ─────────────────────────
   useEffect(() => {

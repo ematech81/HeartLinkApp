@@ -9,6 +9,7 @@ import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthAPI } from 'services/ApiServices';
 import { StorageKeys } from 'src/constants/appConstants';
+import { deregisterPushToken } from 'services/notificationService';
 // ── Initial state ─────────────────────────────────────────────────────────────
 const initialState = {
   user:            null,
@@ -173,6 +174,12 @@ export function AuthProvider({ children }) {
  
   // ── Logout ────────────────────────────────────────────────────────────────
   const logout = async () => {
+    // Fired (not awaited) while the session's still valid — the API call
+    // needs the auth token that clearSession is about to remove, but
+    // logout itself shouldn't wait on a network round-trip. Without this, a
+    // shared/reset device would keep receiving this user's push
+    // notifications after they've signed out.
+    deregisterPushToken();
     await clearSession();
     dispatch({ type: LOGOUT });
   };

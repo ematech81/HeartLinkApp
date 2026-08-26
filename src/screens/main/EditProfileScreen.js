@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, Image, StyleSheet, ScrollView,
   TouchableOpacity, TextInput, ActivityIndicator,
-  StatusBar, Alert, Platform, Switch,
+  StatusBar, Alert, Platform, Switch, Modal,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Video, ResizeMode } from 'expo-av';
@@ -100,6 +100,12 @@ export default function EditProfileScreen({ navigation }) {
   const [isProfileHidden, setIsProfileHidden] = useState(user?.isProfileHidden || false);
   const [newInterest,  setNewInterest]  = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // ── Account deletion ──────────────────────────────────────────────────────
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword,  setDeletePassword]  = useState('');
+  const [deleting,        setDeleting]        = useState(false);
+  const isLocalAuth = user?.authProvider !== 'google'; // Google accounts have no password to re-confirm with
 
   // ── Media state ───────────────────────────────────────────────────────────
   const [profilePicture, setProfilePicture] = useState(user?.profilePicture || null);
@@ -281,6 +287,29 @@ export default function EditProfileScreen({ navigation }) {
       Alert.alert('Save Failed', err.message || 'Could not save profile.');
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  // ── Delete account ────────────────────────────────────────────────────────
+  const handleDeleteAccount = async () => {
+    if (isLocalAuth && !deletePassword) {
+      Alert.alert('Password Required', 'Please enter your password to confirm.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await UserAPI.deleteAccount(isLocalAuth ? deletePassword : undefined);
+      setShowDeleteModal(false);
+      Alert.alert(
+        'Account Deleted',
+        "Your account has been permanently deleted. We're sorry to see you go.",
+        [{ text: 'OK', onPress: logout }]
+      );
+    } catch (err) {
+      Alert.alert('Could Not Delete Account', err.message || 'Please try again.');
+    } finally {
+      setDeleting(false);
+      setDeletePassword('');
     }
   };
 
@@ -641,14 +670,135 @@ export default function EditProfileScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* ── Danger zone ──────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+          <TouchableOpacity
+            style={styles.deleteAccountBtn}
+            onPress={() => setShowDeleteModal(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.deleteAccountText}>Delete My Account</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Footer note */}
         <Text style={styles.footerNote}>
           Your profile information is visible to other users on HeartLink. Please review our Privacy Policy.
         </Text>
       </ScrollView>
+
+      {/* ── Delete account confirmation modal ─────────────────────── */}
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !deleting && setShowDeleteModal(false)}
+      >
+        <View style={dm.overlay}>
+          <View style={dm.sheet}>
+            <Text style={dm.icon}>⚠️</Text>
+            <Text style={dm.title}>Delete Your Account?</Text>
+            <Text style={dm.body}>
+              This is permanent — your profile, photos, and login will be removed
+              and cannot be recovered. Matches you've already chatted with will
+              keep their existing conversation history, but it will show as
+              "Deleted User."
+            </Text>
+
+            {isLocalAuth && (
+              <TextInput
+                style={dm.passwordInput}
+                placeholder="Enter your password to confirm"
+                placeholderTextColor={Colors.textLight}
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+            )}
+
+            <TouchableOpacity
+              style={[dm.confirmBtn, deleting && { opacity: 0.7 }]}
+              onPress={handleDeleteAccount}
+              disabled={deleting}
+              activeOpacity={0.85}
+            >
+              {deleting
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={dm.confirmBtnText}>Yes, Delete My Account</Text>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={dm.cancelBtn}
+              onPress={() => { setShowDeleteModal(false); setDeletePassword(''); }}
+              disabled={deleting}
+            >
+              <Text style={dm.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
+
+// ── Delete-account modal styles ─────────────────────────────────────────────
+const dm = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  sheet: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    alignItems: 'center',
+  },
+  icon: { fontSize: 40, marginBottom: Spacing.sm },
+  title: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.extrabold,
+    color: Colors.text,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
+  },
+  body: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: Spacing.lg,
+  },
+  passwordInput: {
+    width: '100%',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+    fontSize: FontSize.base,
+    color: Colors.text,
+    marginBottom: Spacing.md,
+  },
+  confirmBtn: {
+    width: '100%',
+    backgroundColor: '#EF4444',
+    paddingVertical: 14,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  confirmBtnText: { color: '#fff', fontSize: FontSize.base, fontWeight: FontWeight.semibold },
+  cancelBtn: { paddingVertical: 10, alignItems: 'center', width: '100%' },
+  cancelBtnText: { color: Colors.textSecondary, fontSize: FontSize.base, fontWeight: FontWeight.medium },
+});
 
 const PHOTO_SIZE = 100;
 
@@ -740,6 +890,11 @@ const styles = StyleSheet.create({
   // Logout
   logoutBtn:    { backgroundColor: '#FEF2F2', paddingVertical: 14, borderRadius: Radius.md, alignItems: 'center', borderWidth: 1, borderColor: '#FECACA' },
   logoutText:   { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: '#EF4444' },
+
+  // Danger zone
+  dangerZoneTitle:   { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: '#B91C1C', marginBottom: Spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
+  deleteAccountBtn:  { backgroundColor: '#EF4444', paddingVertical: 14, borderRadius: Radius.md, alignItems: 'center' },
+  deleteAccountText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: '#fff' },
 
   // Footer
   footerNote:   { fontSize: FontSize.xs, color: Colors.textLight, textAlign: 'center', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg },

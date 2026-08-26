@@ -2,10 +2,13 @@
  * useSubscriptionStatus
  *
  * - Syncs subscription/boost status from the backend whenever the app comes
- *   to the foreground (and once on mount).
- * - Triggers the backend expiry check so notifications go out to users whose
- *   subscriptions are expiring within 3 days.
+ *   to the foreground (and once on mount). The backend lazily expires this
+ *   user's own status as part of that same GET /payment/status call.
  * - Returns live-computed flags derived from the auth store (no extra state).
+ *
+ * The global "notify users expiring within 3 days" sweep across ALL users is
+ * a separate admin/cron job (see runExpiryCheck in server.js, runs every 6h)
+ * — it is intentionally NOT triggered from the client anymore.
  */
 
 import { useEffect, useCallback } from 'react';
@@ -29,7 +32,13 @@ export function useSubscriptionStatus() {
     if (!user?._id) return;
     try {
       const data = await PaymentAPI.getStatus();
-      // Backend already ran expiry cleanup — mirror the result locally
+      // GET /payment/status already lazily expires *this* user's own
+      // subscription/boost server-side (see expireIfNeeded on the backend) —
+      // mirror that result locally. The global expiry sweep across ALL users
+      // is a separate admin/cron job (runs every 6h in server.js) and must
+      // NOT be triggered from here — it used to fire on every app foreground
+      // for every user, hammering the DB and re-sending "expiring soon" push
+      // notifications with no de-dupe every time anyone opened the app.
       await updateUser({
         isSubscribed:       data.isSubscribed,
         subscriptionExpiry: data.subscriptionExpiry,
@@ -37,10 +46,6 @@ export function useSubscriptionStatus() {
         isBoosted:          data.isBoosted,
         boostExpiry:        data.boostExpiry,
       });
-
-      // Also trigger the backend expiry + notification batch
-      // (no-op if already run recently — backend is idempotent)
-      PaymentAPI.runExpiryCheck().catch(() => {});
     } catch {
       // Non-fatal — UI will fall back to local state
     }

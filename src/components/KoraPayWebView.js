@@ -9,35 +9,34 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const REDIRECT_HOST = 'heartlink.app';
 const REDIRECT_PATH = '/payment/callback';
 
-export default function FlutterwaveWebView({
+export default function KoraPayWebView({
   visible,
-  paymentLink,   // data.link from /payment/initialize
-  txRef,         // our tx_ref — used for manual confirm fallback
-  onSuccess,     // called with txRef when payment confirmed
+  paymentLink,   // data.payment_link (KoraPay's checkout_url) from /payment/initialize
+  reference,     // our checkout reference — used for manual confirm fallback
+  onSuccess,     // called with reference when the WebView reaches the redirect URL
   onCancel,      // called when user goes back without paying
 }) {
   const insets         = useSafeAreaInsets();
-  const webRef         = useRef(null);
+  const webRef          = useRef(null);
   const [pageLoading,  setPageLoading]  = useState(true);
   const [loadError,    setLoadError]    = useState(false);
 
-  // Detect Flutterwave's redirect to our callback URL.
-  // URL format: https://heartlink.app/payment/callback?status=successful&tx_ref=...&transaction_id=...
+  // KoraPay's redirect only carries `?reference=...` (no status param, unlike
+  // Flutterwave's `?status=successful&tx_ref=...`) — arrival here is just a
+  // "the user is back" signal, not proof of payment. The actual result comes
+  // from the server-side /payment/verify call (or the webhook), never from
+  // this URL, so there's nothing to branch on here besides "did we land on
+  // the redirect page at all".
+  // URL format: https://heartlink.app/payment/callback?reference=HRT-...
   const handleNavChange = (state) => {
     const url = state.url || '';
     if (url.includes(REDIRECT_HOST + REDIRECT_PATH)) {
       try {
         const params = new URL(url).searchParams;
-        const status = params.get('status');
-        const ref    = params.get('tx_ref') || txRef;
-        if (status === 'successful' && ref) {
-          onSuccess(ref);
-        } else {
-          // cancelled or failed — fall back to manual flow
-          onCancel();
-        }
+        const ref = params.get('reference') || reference;
+        onSuccess(ref);
       } catch {
-        onSuccess(txRef); // URL parse failed, trust the stored txRef
+        onSuccess(reference); // URL parse failed, trust the stored reference
       }
     }
   };
@@ -48,15 +47,10 @@ export default function FlutterwaveWebView({
     if (url.includes(REDIRECT_HOST + REDIRECT_PATH)) {
       try {
         const params = new URL(url).searchParams;
-        const status = params.get('status');
-        const ref    = params.get('tx_ref') || txRef;
-        if (status === 'successful' && ref) {
-          onSuccess(ref);
-        } else {
-          onCancel();
-        }
+        const ref = params.get('reference') || reference;
+        onSuccess(ref);
       } catch {
-        onSuccess(txRef);
+        onSuccess(reference);
       }
       return false; // block loading the redirect page
     }
@@ -87,7 +81,7 @@ export default function FlutterwaveWebView({
         {/* ── Instruction strip ─────────────────────────────────────────── */}
         <View style={styles.instructionStrip}>
           <Text style={styles.instructionTxt}>
-            Complete your payment on Flutterwave, then tap{' '}
+            Complete your payment on KoraPay, then tap{' '}
             <Text style={styles.instructionBold}>"I've Paid"</Text> below.
           </Text>
         </View>
@@ -110,7 +104,7 @@ export default function FlutterwaveWebView({
             {pageLoading && (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="large" color="#FF4B7A" />
-                <Text style={styles.loadingText}>Connecting to Flutterwave…</Text>
+                <Text style={styles.loadingText}>Connecting to KoraPay…</Text>
               </View>
             )}
             <WebView
@@ -133,12 +127,12 @@ export default function FlutterwaveWebView({
         <View style={[styles.footer, { paddingBottom: insets.bottom + 8 }]}>
           <TouchableOpacity
             style={styles.paidBtn}
-            onPress={() => onSuccess(txRef)}
+            onPress={() => onSuccess(reference)}
             activeOpacity={0.85}
           >
             <Text style={styles.paidBtnTxt}>✓  I've Completed Payment</Text>
           </TouchableOpacity>
-          <Text style={styles.footerNote}>Powered by Flutterwave · 256-bit SSL</Text>
+          <Text style={styles.footerNote}>Powered by KoraPay · 256-bit SSL</Text>
         </View>
       </View>
     </Modal>
