@@ -45,7 +45,7 @@ export default function ForgotPasswordScreen({ navigation }) {
     try {
       if (method === 'email') {
         await AuthAPI.forgotPassword(value.trim());
-        // Navigate to reset screen — user will enter the 6-digit code from their email
+        // Navigate to reset screen — user will enter the 6-character code from their email
         navigation.navigate(Routes.RESET_PASSWORD);
       } else {
         // Phone users don't have passwords — they log in with OTP directly

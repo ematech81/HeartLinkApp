@@ -442,6 +442,28 @@ export default function RegisterScreen({ navigation, route }) {
 
       const data = await AuthAPI.register(payload);
 
+      // Email/password accounts must verify their email before the account
+      // is usable — the backend deliberately withholds the token here (see
+      // AuthController.register). No token yet means no photo upload either
+      // (that needs auth) — the user can add a photo after verifying.
+      if (data.requiresEmailVerification) {
+        if (data.emailSendFailed) {
+          Alert.alert(
+            'Almost there!',
+            'Your account was created, but we could not send the verification email. We\'ll try again automatically on the next screen.',
+          );
+        }
+        navigation.navigate(Routes.VERIFY_EMAIL, {
+          email: data.email,
+          // register() already sent a code — don't send a redundant second
+          // one that would invalidate the code sitting in the user's inbox.
+          // (Not set when emailSendFailed — nothing actually went out then,
+          // so the verify screen's auto-send should still fire.)
+          codeAlreadySent: !data.emailSendFailed,
+        });
+        return;
+      }
+
       // Upload photo AFTER registration (we now have a token)
       if (photo) {
         setUploadProgress('Uploading your photo...');
@@ -693,7 +715,7 @@ export default function RegisterScreen({ navigation, route }) {
   const isOptionalStep = step >= 6;
  
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <AppStatusBar theme="dark" />
       <ScrollView
         style={styles.container}

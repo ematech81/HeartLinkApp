@@ -139,7 +139,10 @@ export function AuthProvider({ children }) {
     } catch (err) {
       dispatch({ type: SET_ERROR, payload: err.message });
       dispatch({ type: SET_LOADING, payload: false });
-      return { success: false, message: err.message };
+      // Spread err so callers can read extra fields like
+      // requiresEmailVerification/email (the "please verify your email"
+      // login block) without pattern-matching on message text.
+      return { success: false, message: err.message, ...err };
     }
   };
  

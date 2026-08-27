@@ -18,13 +18,13 @@ const BENEFITS = [
 ];
 
 const PLANS = [
-  { id: 'monthly', label: 'Monthly', price: '₦5,000', per: '/ month',   badge: null,          highlight: false },
-  { id: 'yearly',  label: 'Yearly',  price: '₦20,000', per: '/ year',   badge: '🔥 Best Value', highlight: true, note: 'Includes 1 week FREE profile boost!' },
+  { id: 'monthly',  label: 'Monthly',  price: '₦5,000',  per: '/ month',    badge: null,          highlight: false },
+  { id: 'sixMonth', label: '6 Months', price: '₦20,000', per: '/ 6 months', badge: '🔥 Best Value', highlight: true, note: 'Includes 1 week FREE profile boost!' },
 ];
 
 // ── Pre-payment info modal ────────────────────────────────────────────────────
 function PrePaymentModal({ visible, plan, onProceed, onCancel }) {
-  const label = plan === 'yearly' ? 'Yearly Premium — ₦20,000' : 'Monthly Premium — ₦5,000';
+  const label = plan === 'sixMonth' ? '6-Month Premium — ₦20,000' : 'Monthly Premium — ₦5,000';
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
       <View style={p.backdrop}>
@@ -59,8 +59,8 @@ function PrePaymentModal({ visible, plan, onProceed, onCancel }) {
 
 // ── Confirm card (shown after WebView closes) ─────────────────────────────────
 function ConfirmCard({ plan, reference, loading, onConfirm, onDiscard }) {
-  const label = plan === 'yearly' ? 'Yearly Premium' : 'Monthly Premium';
-  const price = plan === 'yearly' ? '₦20,000' : '₦5,000';
+  const label = plan === 'sixMonth' ? '6-Month Premium' : 'Monthly Premium';
+  const price = plan === 'sixMonth' ? '₦20,000' : '₦5,000';
   return (
     <View style={c.card}>
       <View style={c.headerRow}>

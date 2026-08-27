@@ -7,7 +7,6 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
-import * as Google from 'expo-auth-session/providers/google';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import AppStatusBar from 'src/component/common/AppStatusBar';
@@ -29,13 +28,15 @@ WebBrowser.maybeCompleteAuthSession();
 const GOOGLE_WEB_CLIENT_ID     = '529395727102-orvff4q7raal1p72nrgt1vcjvagvumas.apps.googleusercontent.com';
 const GOOGLE_ANDROID_CLIENT_ID = '114769987830-rss1hfqerm67rdk4q6gl74shoos1mes3.apps.googleusercontent.com';
 
-// Redirect URI — native Android client handles its own redirect, web client uses Expo proxy
-const REDIRECT_URI = GOOGLE_ANDROID_CLIENT_ID
-  ? AuthSession.makeRedirectUri({ scheme: 'heartlink', path: 'oauth2redirect' })
-  : 'https://auth.expo.io/@ematech81/heartlink-app';
+// Android gets its own native-scheme redirect (public client — no secret, no
+// iOS client is configured yet so anything else falls back to the web
+// client id, matching this app's original fallback intent).
+const GOOGLE_CLIENT_ID = Platform.OS === 'android' ? GOOGLE_ANDROID_CLIENT_ID : GOOGLE_WEB_CLIENT_ID;
+
+const REDIRECT_URI = AuthSession.makeRedirectUri({ scheme: 'heartlink', path: 'oauth2redirect' });
 
 console.log('🔑 [Google OAuth] Redirect URI:', REDIRECT_URI);
-console.log('🔑 [Google OAuth] Using Android client:', !!GOOGLE_ANDROID_CLIENT_ID);
+console.log('🔑 [Google OAuth] Client:', Platform.OS === 'android' ? 'Android' : 'Web');
 
 const METHODS = [
   { id: 'email', label: '✉️  Email' },
@@ -54,22 +55,37 @@ export default function LoginScreen({ navigation }) {
   );
 
   // ── expo-auth-session Google request ──────────────────────────────────────
-  // responseType: 'token' forces implicit grant → access_token returned directly
-  // (default in v7 may be 'code' which requires server-side exchange we don't have)
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId:        GOOGLE_WEB_CLIENT_ID,
-    ...(GOOGLE_ANDROID_CLIENT_ID && { androidClientId: GOOGLE_ANDROID_CLIENT_ID }),
-    redirectUri:     REDIRECT_URI,
-    responseType:    'token',
-    scopes:          ['openid', 'profile', 'email'],
-  });
+  // Authorization Code + PKCE (Google's current requirement for public/native
+  // clients) — NOT the implicit grant (responseType: 'token') this used
+  // before. Google now rejects implicit-grant requests from clients like
+  // this one with "Error 400: invalid_request — doesn't comply with
+  // Google's OAuth 2.0 policy for keeping apps secure". PKCE needs no client
+  // secret (usePKCE defaults to true), so the code exchange below stays
+  // entirely client-side and this still hands off a plain access token to
+  // the exact same backend flow as before (POST /auth/google {accessToken}).
+  //
+  // This also drops the deprecated `expo-auth-session/providers/google`
+  // wrapper (Expo's own SDK flags it deprecated in favor of native Google
+  // Sign-In libraries — a bigger migration than fits here) in favor of the
+  // still-supported generic AuthSession primitives it was built on.
+  const discovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
+
+  const [request, response, promptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId:     GOOGLE_CLIENT_ID,
+      redirectUri:  REDIRECT_URI,
+      responseType: AuthSession.ResponseType.Code,
+      usePKCE:      true,
+      scopes:       ['openid', 'profile', 'email'],
+    },
+    discovery
+  );
 
   // Handle the OAuth response once it arrives
   useEffect(() => {
     if (!response) return;
 
     console.log('🔑 [Google OAuth] Response type:', response.type);
-    console.log('🔑 [Google OAuth] Response:', JSON.stringify(response, null, 2));
 
     if (response.type === 'error') {
       setGoogleLoading(false);
@@ -87,24 +103,45 @@ export default function LoginScreen({ navigation }) {
       return;
     }
 
-    // accessToken can live in different places depending on expo-auth-session version
-    const accessToken =
-      response.authentication?.accessToken ||
-      response.params?.access_token;
-
-    console.log('🔑 [Google OAuth] Access token:', accessToken ? '✅ received' : '❌ missing');
-
-    if (!accessToken) {
+    const code = response.params?.code;
+    if (!code || !request?.codeVerifier || !discovery) {
       setGoogleLoading(false);
-      Alert.alert(
-        'Google Sign-In Failed',
-        'No access token received from Google. Please try again.',
-      );
+      Alert.alert('Google Sign-In Failed', 'No authorization code received from Google. Please try again.');
       return;
     }
 
-    handleGoogleToken(accessToken);
+    exchangeCodeForToken(code);
   }, [response]);
+
+  // Exchange the authorization code for an access token — client-side, no
+  // secret needed since GOOGLE_CLIENT_ID is a public (native/Android or
+  // web+PKCE) client type.
+  const exchangeCodeForToken = async (code) => {
+    try {
+      const tokenResult = await AuthSession.exchangeCodeAsync(
+        {
+          clientId:     GOOGLE_CLIENT_ID,
+          code,
+          redirectUri:  REDIRECT_URI,
+          extraParams:  { code_verifier: request.codeVerifier },
+        },
+        discovery
+      );
+
+      console.log('🔑 [Google OAuth] Access token:', tokenResult.accessToken ? '✅ received' : '❌ missing');
+
+      if (!tokenResult.accessToken) {
+        setGoogleLoading(false);
+        Alert.alert('Google Sign-In Failed', 'No access token received from Google. Please try again.');
+        return;
+      }
+
+      handleGoogleToken(tokenResult.accessToken);
+    } catch (err) {
+      setGoogleLoading(false);
+      Alert.alert('Google Sign-In Failed', err.message || 'Could not complete sign-in. Please try again.');
+    }
+  };
 
   const handleGoogleToken = async (accessToken) => {
     try {
@@ -158,6 +195,13 @@ export default function LoginScreen({ navigation }) {
     clearError();
     const result = await login({ email: values.email.trim(), password: values.password });
     if (!result.success) {
+      // Unverified email/password account — send them to finish verifying
+      // rather than just showing an error with no way forward.
+      if (result.requiresEmailVerification) {
+        navigation.navigate(Routes.VERIFY_EMAIL, { email: result.email || values.email.trim() });
+        return;
+      }
+
       let msg = result.message;
       if (msg?.toLowerCase().includes('network') || msg?.toLowerCase().includes('econnrefused')) {
         msg = 'Unable to connect to the server. Please check your internet connection.';
@@ -198,7 +242,7 @@ export default function LoginScreen({ navigation }) {
   const isPhoneLoading = checkingPhone;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <AppStatusBar theme="dark" />
       <ScrollView
         style={styles.container}

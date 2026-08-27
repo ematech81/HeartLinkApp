@@ -82,7 +82,7 @@ export default function ResetPasswordScreen({ navigation }) {
   const handleReset = async () => {
     const code = resetCode.trim();
     if (!code) { setCodeError('Please enter the reset code from your email.'); return; }
-    if (!/^\d{6}$/.test(code)) { setCodeError('The reset code must be 6 digits.'); return; }
+    if (!/^[A-Z0-9]{6}$/.test(code)) { setCodeError('The reset code must be 6 characters.'); return; }
     setCodeError('');
     if (!validate()) return;
 
@@ -153,18 +153,19 @@ export default function ResetPasswordScreen({ navigation }) {
           </View>
           <Text style={styles.title}>Reset Password</Text>
           <Text style={styles.subtitle}>
-            Enter the 6-digit code we sent to your email, then choose a new password.
+            Enter the 6-character code we sent to your email, then choose a new password.
           </Text>
         </View>
 
-        {/* Reset code */}
+        {/* Reset code — alphanumeric (e.g. "OT34K6"), not digit-only */}
         <Input
           label="Reset Code"
-          placeholder="Enter 6-digit code"
+          placeholder="Enter 6-character code"
           value={resetCode}
-          onChangeText={(v) => { setResetCode(v.replace(/\D/g, '').slice(0, 6)); setCodeError(''); }}
+          onChangeText={(v) => { setResetCode(v.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 6)); setCodeError(''); }}
           error={codeError}
-          keyboardType="number-pad"
+          keyboardType="default"
+          autoCapitalize="characters"
           maxLength={6}
         />
 

@@ -1,3 +1,10 @@
+/**
+ * HeartLink VerifyEmailScreen
+ * Shown right after registration for email/password accounts — the account
+ * isn't usable (no login) until this code is confirmed. Mirrors OtpScreen.js
+ * (same alphanumeric-code-box pattern) but talks to the email-specific
+ * endpoints and carries `email` instead of `phone`.
+ */
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
@@ -9,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import Colors from 'src/constants/Colors';
 import { useAuth } from 'src/store/authStore';
@@ -23,20 +31,18 @@ import Button from 'src/component/common/Button';
 const OTP_LENGTH = Validation.otpLength; // 6
 const RESEND_COUNTDOWN = 60;
 
-export default function OTPScreen({ navigation, route }) {
-  const phone = route?.params?.phone ?? '';
-  const isVerifyingRegistration = route?.params?.isRegistration ?? false;
-  
+export default function VerifyEmailScreen({ navigation, route }) {
+  const email = route?.params?.email ?? '';
 
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(RESEND_COUNTDOWN);
   const [canResend, setCanResend] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
+  const [initialSending, setInitialSending] = useState(true);
   const { loginWithToken } = useAuth();
 
   const inputs = useRef([]);
-  const { login } = useAuth();
 
   // ── Countdown timer ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -54,26 +60,41 @@ export default function OTPScreen({ navigation, route }) {
     return () => clearTimeout(t);
   }, []);
 
-  // ── OTP input handlers ───────────────────────────────────────────────────────
-  // Codes are alphanumeric (e.g. "OT34K6"), not digit-only — strips anything
-  // that isn't a letter/digit instead of stripping letters outright, and
-  // uppercases to match the format the backend actually generates.
+  // ── Auto-send a fresh code on mount ─────────────────────────────────────────
+  // Whoever navigated here may or may not have just triggered a send —
+  // registration does (register() sends one server-side; RegistrationScreen
+  // passes codeAlreadySent:true so this doesn't redundantly send a SECOND
+  // code that would immediately invalidate the first one the user already
+  // has open in their inbox). A blocked login redirect never sends one
+  // (login() only checks status), so this fires for that case — and for
+  // anyone who reopens the app mid-flow with an already-expired code.
+  useEffect(() => {
+    if (!email) return;
+    if (route?.params?.codeAlreadySent) {
+      setInitialSending(false);
+      return;
+    }
+    (async () => {
+      await sendCode({ isInitial: true });
+      setInitialSending(false);
+    })();
+  }, []);
+
+  // ── OTP input handlers — alphanumeric (e.g. "OT34K6"), not digit-only ────────
   const handleChange = (text, index) => {
     const char = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(-1);
     const newOtp = [...otp];
     newOtp[index] = char;
     setOtp(newOtp);
 
-    // Move to next box
     if (char && index < OTP_LENGTH - 1) {
       inputs.current[index + 1]?.focus();
     }
 
-    // Auto-submit when last box filled
     if (char && index === OTP_LENGTH - 1) {
       const fullCode = [...newOtp.slice(0, OTP_LENGTH - 1), char].join('');
       if (fullCode.length === OTP_LENGTH) {
-        verifyOtp(fullCode);
+        verifyCode(fullCode);
       }
     }
   };
@@ -87,12 +108,8 @@ export default function OTPScreen({ navigation, route }) {
     }
   };
 
-  // ── Verify OTP ───────────────────────────────────────────────────────────────
-  // At the top — add loginWithToken to useAuth
-
-  
-  // Replace the verifyOtp function with this:
-  const verifyOtp = async (code) => {
+  // ── Verify code ───────────────────────────────────────────────────────────────
+  const verifyCode = async (code) => {
     const otpCode = code ?? otp.join('');
     if (otpCode.length < OTP_LENGTH) {
       Alert.alert('Incomplete', 'Please enter the full 6-character code.');
@@ -100,25 +117,10 @@ export default function OTPScreen({ navigation, route }) {
     }
     setLoading(true);
     try {
-      const data = await AuthAPI.verifyOtp(phone, otpCode);
-  
-      if (route?.params?.isForgotPassword) {
-        // Go to reset password screen
-        navigation.navigate(Routes.RESET_PASSWORD, {
-          token: data.resetToken,
-          email: route.params.email,
-        });
-      } else {
-        // Log user in — backend returns { success, token, user }
-        await loginWithToken(data.token, data.user);
-      }
+      const data = await AuthAPI.verifyEmailOtp(email, otpCode);
+      // Backend returns { success, token, user } — same shape as register/login
+      await loginWithToken(data.token, data.user);
     } catch (err) {
-      // This account's email needs verifying before any login path works —
-      // send them to finish that instead of just showing an error.
-      if (err.requiresEmailVerification) {
-        navigation.navigate(Routes.VERIFY_EMAIL, { email: err.email });
-        return;
-      }
       Alert.alert('Invalid Code', err.message || 'Please try again.');
       setOtp(Array(OTP_LENGTH).fill(''));
       inputs.current[0]?.focus();
@@ -127,22 +129,30 @@ export default function OTPScreen({ navigation, route }) {
     }
   };
 
-  // ── Resend OTP ───────────────────────────────────────────────────────────────
-  const handleResend = async () => {
-    if (!canResend || resendLoading) return;
-    setResendLoading(true);
+  // ── Send/resend the verification code ────────────────────────────────────────
+  // Shared by the initial auto-send-on-mount effect above and the "Resend
+  // Code" button below — `isInitial` just suppresses the "Code Sent" alert
+  // for the auto-send (silent success, only surfaced if it fails).
+  const sendCode = async ({ isInitial = false } = {}) => {
     try {
-      await AuthAPI.sendOtp(phone);
+      await AuthAPI.resendEmailOtp(email);
       setOtp(Array(OTP_LENGTH).fill(''));
       setResendTimer(RESEND_COUNTDOWN);
       setCanResend(false);
       inputs.current[0]?.focus();
-      Alert.alert('Code Sent', `A new code has been sent to ${phone}`);
+      if (!isInitial) {
+        Alert.alert('Code Sent', `A new code has been sent to ${email}`);
+      }
     } catch (err) {
-      Alert.alert('Error', err.message || 'Failed to resend code. Please try again.');
-    } finally {
-      setResendLoading(false);
+      Alert.alert('Error', err.message || 'Failed to send verification code. Please try again.');
     }
+  };
+
+  const handleResend = async () => {
+    if (!canResend || resendLoading) return;
+    setResendLoading(true);
+    await sendCode();
+    setResendLoading(false);
   };
 
   const filledCount = otp.filter(Boolean).length;
@@ -160,27 +170,34 @@ export default function OTPScreen({ navigation, route }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Back button */}
-        <BackButton style={styles.backBtn} />
+        {/* No back button — going back would strand the user with an
+            already-created-but-unverified account and no way in */}
+        <View style={styles.backBtn} />
 
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.iconBox}>
-            <Text style={styles.iconEmoji}>🔐</Text>
+            <Text style={styles.iconEmoji}>📧</Text>
           </View>
 
-          <Text style={styles.title}>Verify Your Phone</Text>
+          <Text style={styles.title}>Verify Your Email</Text>
           <Text style={styles.subtitle}>
-            We sent a {OTP_LENGTH}-character verification code to
+            {initialSending ? 'Sending a verification code to' : `We sent a ${OTP_LENGTH}-character verification code to`}
           </Text>
-          <Text style={styles.phone}>{phone || 'your phone number'}</Text>
+          <Text style={styles.email}>{email || 'your email'}</Text>
+          {initialSending && (
+            <View style={styles.sendingRow}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.sendingText}>Sending...</Text>
+            </View>
+          )}
         </View>
 
         {/* OTP boxes */}
         <View style={styles.otpRow}>
-          {otp.map((digit, i) => {
+          {otp.map((char, i) => {
             const isFocusTarget = i === filledCount && !isComplete;
-            const isFilled = Boolean(digit);
+            const isFilled = Boolean(char);
 
             return (
               <TextInput
@@ -191,7 +208,7 @@ export default function OTPScreen({ navigation, route }) {
                   isFilled && styles.otpBoxFilled,
                   isFocusTarget && styles.otpBoxActive,
                 ]}
-                value={digit}
+                value={char}
                 onChangeText={(t) => handleChange(t, i)}
                 onKeyPress={(e) => handleKeyPress(e, i)}
                 keyboardType="default"
@@ -199,7 +216,8 @@ export default function OTPScreen({ navigation, route }) {
                 maxLength={1}
                 selectTextOnFocus
                 caretHidden
-                textContentType="oneTimeCode" // iOS autofill
+                editable={!initialSending}
+                textContentType="oneTimeCode"
               />
             );
           })}
@@ -214,8 +232,8 @@ export default function OTPScreen({ navigation, route }) {
 
         {/* Verify button */}
         <Button
-          title="Verify Code"
-          onPress={() => verifyOtp()}
+          title="Verify & Activate Account"
+          onPress={() => verifyCode()}
           loading={loading}
           disabled={!isComplete}
           size="lg"
@@ -240,13 +258,13 @@ export default function OTPScreen({ navigation, route }) {
           </TouchableOpacity>
         </View>
 
-        {/* Wrong number */}
+        {/* Back to login — the account exists, just needs verifying later */}
         <TouchableOpacity
           style={styles.wrongNumberBtn}
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.navigate(Routes.LOGIN)}
         >
           <Text style={styles.wrongNumberText}>
-            Wrong number? <Text style={styles.wrongNumberLink}>Change it</Text>
+            Verify later? <Text style={styles.wrongNumberLink}>Back to Sign In</Text>
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -269,9 +287,9 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     marginBottom: Spacing.xl,
+    height: 24,
   },
 
-  // ── Header ───────────────────────────────────────────────────────────────────
   header: {
     alignItems: 'center',
     marginBottom: Spacing.xl,
@@ -303,14 +321,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  phone: {
+  email: {
     fontSize: FontSize.base,
     fontWeight: FontWeight.semibold,
     color: Colors.primary,
     marginTop: 2,
   },
+  sendingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: Spacing.md,
+  },
+  sendingText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+  },
 
-  // ── OTP Input ────────────────────────────────────────────────────────────────
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -339,7 +366,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.backgroundGradientStart,
   },
 
-  // ── Progress hint ────────────────────────────────────────────────────────────
   progressHint: {
     fontSize: FontSize.xs,
     color: Colors.textLight,
@@ -347,13 +373,11 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
 
-  // ── Buttons ──────────────────────────────────────────────────────────────────
   verifyBtn: {
     width: '100%',
     marginBottom: Spacing.lg,
   },
 
-  // ── Resend ───────────────────────────────────────────────────────────────────
   resendRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -374,7 +398,6 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.regular,
   },
 
-  // ── Wrong number ─────────────────────────────────────────────────────────────
   wrongNumberBtn: {
     alignSelf: 'center',
     paddingVertical: Spacing.sm,

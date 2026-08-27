@@ -58,8 +58,13 @@ api.interceptors.response.use(
       await AsyncStorage.multiRemove([StorageKeys.AUTH_TOKEN, StorageKeys.USER]);
     }
 
-    // Return the REAL message — don't remap here
-    return Promise.reject({ message, status });
+    // Return the REAL message — don't remap here. Also spread the rest of
+    // the response body (e.g. requiresEmailVerification, email on the
+    // login/register "please verify" responses) so callers that need more
+    // than just the message can read it directly, instead of pattern-
+    // matching on message text.
+    const { success: _s, message: _m, ...extra } = error.response?.data || {};
+    return Promise.reject({ message, status, ...extra });
   }
 );
 
@@ -73,6 +78,8 @@ export const AuthAPI = {
   getMe:          ()                => api.get('/auth/me'),
   sendOtp:        (phone)           => api.post('/auth/send-otp', { phone }),
   verifyOtp:      (phone, otp)      => api.post('/auth/verify-otp', { phone, otp }),
+  verifyEmailOtp: (email, otp)      => api.post('/auth/verify-email-otp', { email, otp }),
+  resendEmailOtp: (email)           => api.post('/auth/resend-email-otp', { email }),
   forgotPassword: (email)           => api.post('/auth/forgot-password', { email }),
   resetPassword:  (token, password) => api.post('/auth/reset-password', { token, password }),
 };

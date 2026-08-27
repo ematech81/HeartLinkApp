@@ -19,8 +19,12 @@ const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
 
 const PLANS = [
-  { id: 'monthly', label: 'Monthly', price: '₦5,000', per: 'per month',           badge: null,          highlight: false },
-  { id: 'yearly',  label: 'Yearly',  price: '₦20,000', per: 'per year  ·  save 67%', badge: '🔥 Best Value', highlight: true, note: '+ 1 week FREE boost' },
+  { id: 'monthly',  label: 'Monthly',  price: '₦5,000',  per: 'per month',                    badge: null,          highlight: false },
+  // ₦5,000/month × 6 = ₦30,000 baseline vs. the actual ₦20,000 price — 33%
+  // savings (was "save 67%", calculated against a 12-month baseline back
+  // when this was a yearly plan; that number is now wrong for 6 months and
+  // must not just carry over unchanged).
+  { id: 'sixMonth', label: '6 Months', price: '₦20,000', per: 'per 6 months  ·  save 33%', badge: '🔥 Best Value', highlight: true, note: '+ 1 week FREE boost' },
 ];
 
 const SUB_BENEFITS = [
@@ -41,8 +45,8 @@ const BOOST_BENEFITS = [
 
 // ── Pre-payment info modal ────────────────────────────────────────────────────
 function PrePaymentModal({ visible, plan, isBoost, onProceed, onCancel }) {
-  const planLabel = isBoost ? 'Profile Boost' : plan === 'yearly' ? 'Yearly Premium' : 'Monthly Premium';
-  const price     = isBoost ? '₦3,000' : plan === 'yearly' ? '₦20,000' : '₦5,000';
+  const planLabel = isBoost ? 'Profile Boost' : plan === 'sixMonth' ? '6-Month Premium' : 'Monthly Premium';
+  const price     = isBoost ? '₦3,000' : plan === 'sixMonth' ? '₦20,000' : '₦5,000';
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
@@ -80,8 +84,8 @@ function PrePaymentModal({ visible, plan, isBoost, onProceed, onCancel }) {
 
 // ── Pending confirm card ──────────────────────────────────────────────────────
 function ConfirmCard({ plan, isBoost, reference, loading, onConfirm, onDiscard }) {
-  const planLabel = isBoost ? 'Profile Boost (7 days)' : plan === 'yearly' ? 'Yearly Premium' : 'Monthly Premium';
-  const price     = isBoost ? '₦3,000' : plan === 'yearly' ? '₦20,000' : '₦5,000';
+  const planLabel = isBoost ? 'Profile Boost (7 days)' : plan === 'sixMonth' ? '6-Month Premium' : 'Monthly Premium';
+  const price     = isBoost ? '₦3,000' : plan === 'sixMonth' ? '₦20,000' : '₦5,000';
 
   return (
     <View style={c.card}>
@@ -348,7 +352,7 @@ export default function SubscriptionScreen({ navigation }) {
 
           <StatusCard
             icon="👑"
-            title={isSubscribed ? `Premium · ${status?.subscriptionPlan === 'yearly' ? 'Yearly' : 'Monthly'}` : 'Free Account'}
+            title={isSubscribed ? `Premium · ${status?.subscriptionPlan === 'sixMonth' ? '6 Months' : 'Monthly'}` : 'Free Account'}
             subtitle={
               isSubscribed
                 ? `${subDaysLeft} day${subDaysLeft !== 1 ? 's' : ''} remaining · expires ${fmtDate(status?.subscriptionExpiry)}`
