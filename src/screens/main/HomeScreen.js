@@ -1039,7 +1039,7 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* ── Action bar ──────────────────────────────────────────────────── */}
-      <View style={[styles.actionBar, { paddingBottom: insets.bottom + 10 }]}>
+      <View style={[styles.actionBar, { paddingBottom: insets.bottom + 2 }]}>
 
         {/* Floating pill of buttons */}
         <View style={styles.btnRow}>
@@ -1277,9 +1277,14 @@ const styles = StyleSheet.create({
   tabPillTextActive: { color: '#fff' },
 
   // ── Action bar ────────────────────────────────────────────────────────────
+  // Was tall enough (paddingTop 16 + a 68px Like button + inset padding, ~110-
+  // 130px total) that it visibly ate into the card image above it. Shrunk to
+  // sit around ~70px tall (smaller buttons/icons, tighter padding) and made
+  // semi-transparent instead of solid black, so it reads as an overlay rather
+  // than a slab covering the photo.
   actionBar: {
-    backgroundColor: '#0D0D0D',
-    paddingTop: 16,
+    backgroundColor: 'rgba(13,13,13,0.7)',
+    paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.06)',
   },
@@ -1287,7 +1292,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
+    gap: 10,
     paddingHorizontal: 20,
   },
 
@@ -1302,40 +1307,40 @@ const styles = StyleSheet.create({
 
   // Nope — white with red tint border
   btnNope: {
-    width: 56, height: 56,
-    backgroundColor: '#1A1A1A',
+    width: 38, height: 38,
+    backgroundColor: 'rgba(26,26,26,0.75)',
     borderWidth: 1.5,
     borderColor: 'rgba(231,76,60,0.4)',
     ...Platform.select({ ios: { shadowColor: '#E74C3C' }, android: {} }),
   },
   // Super — white with blue tint
   btnSuper: {
-    width: 52, height: 52,
-    backgroundColor: '#1A1A1A',
+    width: 34, height: 34,
+    backgroundColor: 'rgba(26,26,26,0.75)',
     borderWidth: 1.5,
     borderColor: 'rgba(99,179,237,0.4)',
     ...Platform.select({ ios: { shadowColor: '#63B3ED' }, android: {} }),
   },
   // Like — primary gradient-like (solid pink)
   btnLike: {
-    width: 68, height: 68,
+    width: 44, height: 44,
     backgroundColor: '#FF4B7A',
     borderWidth: 0,
     ...Platform.select({ ios: { shadowColor: '#FF4B7A' }, android: {} }),
   },
   // Message
   btnMsg: {
-    width: 56, height: 56,
-    backgroundColor: '#1A1A1A',
+    width: 38, height: 38,
+    backgroundColor: 'rgba(26,26,26,0.75)',
     borderWidth: 1.5,
     borderColor: 'rgba(154,117,252,0.4)',
     ...Platform.select({ ios: { shadowColor: '#9A75FC' }, android: {} }),
   },
 
-  iconNope:  { fontSize: 22, fontWeight: '800', color: '#E74C3C' },
-  iconSuper: { fontSize: 21, color: '#63B3ED', fontWeight: '700' },
-  iconLike:  { fontSize: 30, color: '#fff' },
-  iconMsg:   { fontSize: 20, color: '#9A75FC' },
+  iconNope:  { fontSize: 15, fontWeight: '800', color: '#E74C3C' },
+  iconSuper: { fontSize: 13, color: '#63B3ED', fontWeight: '700' },
+  iconLike:  { fontSize: 20, color: '#fff' },
+  iconMsg:   { fontSize: 13, color: '#9A75FC' },
 
   // ── Loading / empty states ─────────────────────────────────────────────────
   center: {

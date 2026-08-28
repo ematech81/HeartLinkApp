@@ -18,16 +18,24 @@ const initialState = {
   isLoading:       false,  // ← false by default, only true during API calls
   isInitializing:  true,   // ← separate flag for app startup session check
   error:           null,
+  // Messaging PIN "app lock" (like Messenger) — deliberately NOT persisted
+  // to AsyncStorage: it lives only in memory for this reducer's lifetime, so
+  // a fresh app launch always starts locked again (the whole point of an app
+  // lock), while navigating around within the same running session doesn't
+  // re-prompt every time. Reset to false by LOGOUT below via ...initialState.
+  messagingUnlocked: false,
 };
- 
+
 // ── Actions ───────────────────────────────────────────────────────────────────
-const SET_LOADING       = 'SET_LOADING';
-const SET_INITIALIZING  = 'SET_INITIALIZING';
-const AUTH_SUCCESS      = 'AUTH_SUCCESS';
-const LOGOUT            = 'LOGOUT';
-const UPDATE_USER       = 'UPDATE_USER';
-const SET_ERROR         = 'SET_ERROR';
- 
+const SET_LOADING        = 'SET_LOADING';
+const SET_INITIALIZING   = 'SET_INITIALIZING';
+const AUTH_SUCCESS       = 'AUTH_SUCCESS';
+const LOGOUT             = 'LOGOUT';
+const UPDATE_USER        = 'UPDATE_USER';
+const SET_ERROR          = 'SET_ERROR';
+const UNLOCK_MESSAGING   = 'UNLOCK_MESSAGING';
+const LOCK_MESSAGING     = 'LOCK_MESSAGING';
+
 function reducer(state, action) {
   switch (action.type) {
     case SET_LOADING:
@@ -54,6 +62,10 @@ function reducer(state, action) {
       return { ...state, user: { ...state.user, ...action.payload } };
     case SET_ERROR:
       return { ...state, error: action.payload, isLoading: false };
+    case UNLOCK_MESSAGING:
+      return { ...state, messagingUnlocked: true };
+    case LOCK_MESSAGING:
+      return { ...state, messagingUnlocked: false };
     default:
       return state;
   }
@@ -199,7 +211,11 @@ export function AuthProvider({ children }) {
   };
  
   const clearError = () => dispatch({ type: SET_ERROR, payload: null });
- 
+
+  // ── Messaging PIN unlock (session-only, see initialState comment) ────────
+  const unlockMessagingSession = () => dispatch({ type: UNLOCK_MESSAGING });
+  const lockMessagingSession   = () => dispatch({ type: LOCK_MESSAGING });
+
   return (
     <AuthContext.Provider
       value={{
@@ -211,6 +227,8 @@ export function AuthProvider({ children }) {
         logout,
         updateUser,
         clearError,
+        unlockMessagingSession,
+        lockMessagingSession,
       }}
     >
       {children}

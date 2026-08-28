@@ -12,6 +12,7 @@ import { MessageAPI } from 'services/ApiServices';
 import { useAuth } from 'src/store/authStore';
 import SocketService from 'services/socketService';
 import UpgradeModal from 'src/components/UpgradeModal';
+import MessagingPinGate from 'src/components/MessagingPinGate';
 
 // ── Dummy messages for dev ────────────────────────────────────────────────────
 const DUMMY_MESSAGES = [
@@ -119,7 +120,7 @@ const typingStyles = StyleSheet.create({
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ChatScreen({ navigation, route }) {
   const insets    = useSafeAreaInsets();
-  const { user }  = useAuth();
+  const { user, messagingUnlocked }  = useAuth();
 
   const userId     = route?.params?.userId;
   const isDummy    = !userId || !/^[a-f0-9]{24}$/i.test(userId);
@@ -317,6 +318,24 @@ export default function ChatScreen({ navigation, route }) {
       </>
     );
   }, [messages, userAvatar]);
+
+  // ── Messaging PIN gate (Premium-only "app lock", like Messenger) ─────────
+  // Every route that lands here (swipe-card message button, Matches,
+  // MessagesScreen, a match-alert push notification, etc.) funnels through
+  // this one screen, so gating it here — rather than every individual
+  // navigate() call site — is the single choke point that actually protects
+  // chat content no matter how the user got here. Free (non-subscribed)
+  // users are completely unaffected: needsPinGate is always false for them,
+  // and every entry point already gates the swipe icon on its own for them
+  // (see HomeScreen.handleSendMessage) — that existing behavior isn't
+  // touched by this at all.
+  const subActive = user?.isSubscribed &&
+    (!user.subscriptionExpiry || new Date(user.subscriptionExpiry) > new Date());
+  const needsPinGate = subActive && !messagingUnlocked;
+
+  if (needsPinGate) {
+    return <MessagingPinGate onCancel={() => navigation.goBack()} />;
+  }
 
   return (
     <KeyboardAvoidingView

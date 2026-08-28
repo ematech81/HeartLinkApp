@@ -115,6 +115,12 @@ export const UserAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   deletePhoto: (index) => api.delete(`/upload/photos/${index}`),
+
+  // ── Messaging PIN (Premium-only chat lock, like Messenger's App Lock) ────
+  getMessagingPinStatus: ()               => api.get('/users/messaging-pin/status'),
+  setMessagingPin:       (pin, currentPin) => api.post('/users/messaging-pin', { pin, currentPin }),
+  verifyMessagingPin:    (pin)             => api.post('/users/messaging-pin/verify', { pin }),
+  resetMessagingPin:     (password, newPin) => api.post('/users/messaging-pin/reset', { password, newPin }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

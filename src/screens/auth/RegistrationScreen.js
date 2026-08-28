@@ -1,8 +1,16 @@
 /**
  * HeartLink RegisterScreen
- * 2-step registration form.
- * Step 1: name, email, phone, password
- * Step 2: gender, relationship type, DOB, country, city
+ * Multi-step registration form (up to 9 steps depending on relationship type).
+ *
+ * Step 1 (name, email, phone, password) creates and verifies the account on
+ * its own — submitting it registers immediately, sends an email verification
+ * code, and hands off to VerifyEmailScreen (see handleStep1Register). Once
+ * verified, the user lands back on this screen at step 2, authenticated,
+ * via AppNavigator's CompleteProfile gate (isProfileComplete:false) — the
+ * same "create now, complete profile later" path Google sign-in already
+ * uses (googleMode). Steps 2-9 collect the remaining profile fields and
+ * submit them via the authenticated PUT /api/users/profile, finishing with
+ * isProfileComplete:true (see handleRegister).
  */
 
 import React, { useState } from 'react';
@@ -196,7 +204,16 @@ const sectionStyles = StyleSheet.create({
 export default function RegisterScreen({ navigation, route }) {
   const { loginWithToken, updateUser } = useAuth();
 
-  // ── Google mode: skip step 1, start from step 2 ───────────────────────────
+  // ── "Complete profile" mode: skip step 1, start from step 2 ───────────────
+  // Originally Google-only ("googleMode" — an already-authenticated user
+  // whose account exists but has no profile-detail fields yet), this now
+  // also covers local email/password and phone accounts (2026-08-27):
+  // step 1 (name/email/phone/password) submits immediately on its own (see
+  // handleStep1Register below) and creates the account right away, so by
+  // the time a user reaches step 2 they're always already authenticated —
+  // via Google, or via VerifyEmailScreen/phone-otp login after step 1. The
+  // param name stays `googleMode` since AppNavigator's CompleteProfile gate
+  // and LoginScreen both already pass it.
   const googleMode  = route?.params?.googleMode  ?? false;
   const googleToken = route?.params?.googleToken ?? null;
   const googleUser  = route?.params?.googleUser  ?? null;
@@ -289,6 +306,60 @@ export default function RegisterScreen({ navigation, route }) {
   const handleNext = () => {
     if (!validateCurrentStep()) return;
     goNext();
+  };
+
+  // ── Step 1 submit: create the account immediately ──────────────────────────
+  // Previously step 1 was just a local `goNext()` like every other step —
+  // the account wasn't created (and no verification email sent) until the
+  // very end, after all 9 steps. Now step 1 IS the account-creation step:
+  // tapping "Create Account" here registers immediately with just
+  // name/email/phone/password, the backend sends the verification code
+  // right away, and the remaining profile-detail steps (2-9) are collected
+  // afterward — once verified — via the same authenticated
+  // "complete your profile" flow Google sign-in already uses (see
+  // googleMode above, and handleRegister's profile-completion branch below).
+  const handleStep1Register = async () => {
+    if (!step1.validate()) return;
+    setLoading(true);
+    try {
+      const data = await AuthAPI.register({
+        name:     step1.values.name.trim(),
+        email:    step1.values.email.trim().toLowerCase(),
+        phone:    step1.values.phone.trim(),
+        password: step1.values.password,
+      });
+
+      if (data.requiresEmailVerification) {
+        if (data.emailSendFailed) {
+          Alert.alert(
+            'Almost there!',
+            'Your account was created, but we could not send the verification email. We\'ll try again automatically on the next screen.',
+          );
+        }
+        navigation.navigate(Routes.VERIFY_EMAIL, {
+          email: data.email,
+          // register() already sent a code — don't send a redundant second
+          // one that would invalidate the code sitting in the user's inbox.
+          codeAlreadySent: !data.emailSendFailed,
+        });
+        return;
+      }
+
+      // Phone-only accounts (no email) have nothing to verify here — the
+      // backend already issued a token. Log in now; the account is
+      // isProfileComplete:false, so the app's own CompleteProfile gate
+      // (AppNavigator) takes over from here and lands the user back on
+      // this same screen at step 2, authenticated.
+      await loginWithToken(data.token, data.user);
+    } catch (err) {
+      let message = err.message || 'Registration failed. Please try again.';
+      if (message.toLowerCase().includes('already')) {
+        message = 'This email or phone number is already registered. Please log in instead.';
+      }
+      Alert.alert('Registration Failed', message);
+    } finally {
+      setLoading(false);
+    }
   };
  
   // ── Image picker ───────────────────────────────────────────────────────────
@@ -398,9 +469,17 @@ export default function RegisterScreen({ navigation, route }) {
       };
 
       if (googleMode) {
-        // ── Google user — profile completion path ─────────────────────────────
-        // The user already exists in the backend (created during Google auth).
-        // We first log them in (so the API token is set), then update their profile.
+        // ── Profile-completion path (Google AND, since 2026-08-27, local
+        // email/phone accounts resumed here after step-1 verification) ────────
+        // The user already exists in the backend and is usually already
+        // authenticated (via VerifyEmailScreen/phone-otp, or a restored
+        // session for a Google user who reopened the app mid-flow). Only
+        // call loginWithToken when we actually have a fresh token to store —
+        // AppNavigator's CompleteProfile gate deliberately passes
+        // googleToken:null for an already-authenticated resume, since the
+        // real token is already correctly persisted; calling
+        // loginWithToken(null, ...) there would overwrite it with null and
+        // silently sign the user out the moment this screen finishes.
         const token = googleToken;
         const partialUser = {
           _id:            googleUser?.userId,
@@ -409,7 +488,11 @@ export default function RegisterScreen({ navigation, route }) {
           profilePicture: googleUser?.profilePicture,
           isProfileComplete: false,
         };
-        await loginWithToken(token, partialUser);
+        if (token) {
+          await loginWithToken(token, partialUser);
+        } else {
+          updateUser(partialUser);
+        }
 
         // Now update the full profile on the backend
         await UserAPI.updateProfile({ ...profilePayload, isProfileComplete: true });
@@ -430,59 +513,9 @@ export default function RegisterScreen({ navigation, route }) {
         updateUser({ isProfileComplete: true });
         return;
       }
-
-      // ── Standard registration path ─────────────────────────────────────────
-      const payload = {
-        name:     step1.values.name.trim(),
-        email:    step1.values.email.trim().toLowerCase(),
-        phone:    step1.values.phone.trim(),
-        password: step1.values.password,
-        ...profilePayload,
-      };
-
-      const data = await AuthAPI.register(payload);
-
-      // Email/password accounts must verify their email before the account
-      // is usable — the backend deliberately withholds the token here (see
-      // AuthController.register). No token yet means no photo upload either
-      // (that needs auth) — the user can add a photo after verifying.
-      if (data.requiresEmailVerification) {
-        if (data.emailSendFailed) {
-          Alert.alert(
-            'Almost there!',
-            'Your account was created, but we could not send the verification email. We\'ll try again automatically on the next screen.',
-          );
-        }
-        navigation.navigate(Routes.VERIFY_EMAIL, {
-          email: data.email,
-          // register() already sent a code — don't send a redundant second
-          // one that would invalidate the code sitting in the user's inbox.
-          // (Not set when emailSendFailed — nothing actually went out then,
-          // so the verify screen's auto-send should still fire.)
-          codeAlreadySent: !data.emailSendFailed,
-        });
-        return;
-      }
-
-      // Upload photo AFTER registration (we now have a token)
-      if (photo) {
-        setUploadProgress('Uploading your photo...');
-        try {
-          await loginWithToken(data.token, data.user);
-          const photoUrl = await uploadProfilePicture(photo);
-          await UserAPI.updateProfile({ profilePicture: photoUrl });
-          updateUser({ profilePicture: photoUrl });
-        } catch (uploadErr) {
-          console.log('⚠️ Photo upload failed:', uploadErr.message);
-          Alert.alert(
-            'Almost done!',
-            'Your account was created but we could not upload your photo. You can add it later from your profile.',
-            [{ text: 'OK' }]
-          );
-        }
-      } else {
-        await loginWithToken(data.token, data.user);
-      }
+      // No else branch: handleRegister only ever runs via the CompleteProfile
+      // gate (googleMode), for both Google and local accounts — step 1 now
+      // creates and verifies the account on its own (handleStep1Register).
 
     } catch (err) {
       let message = err.message || 'Registration failed. Please try again.';
@@ -743,8 +776,16 @@ export default function RegisterScreen({ navigation, route }) {
  
         {/* CTA */}
         <Button
-          title={isLastStep ? 'Create Account  ♥' : 'Continue →'}
-          onPress={isLastStep ? handleCreateAccountPress : handleNext}
+          title={
+            isLastStep ? 'Create Account  ♥'
+            : (step === 1 && !googleMode) ? 'Create Account →'
+            : 'Continue →'
+          }
+          onPress={
+            isLastStep ? handleCreateAccountPress
+            : (step === 1 && !googleMode) ? handleStep1Register
+            : handleNext
+          }
           loading={loading}
           size="lg"
           style={styles.actionBtn}
@@ -835,14 +876,17 @@ export default function RegisterScreen({ navigation, route }) {
                     I have read and agree to HeartLink's{' '}
                     <Text
                       style={agreementStyles.link}
-                      onPress={() => Linking.openURL('https://heartlink.app/terms')}
+                      // Points at heartlink-terms (see project root), hosted
+                      // on GitHub Pages — update this if the repo name or
+                      // GitHub username ever changes.
+                      onPress={() => Linking.openURL('https://ematech81.github.io/heartlink-terms/terms.html')}
                     >
                       Terms & Conditions
                     </Text>
                     {' '}and{' '}
                     <Text
                       style={agreementStyles.link}
-                      onPress={() => Linking.openURL('https://heartlink.app/privacy')}
+                      onPress={() => Linking.openURL('https://ematech81.github.io/heartlink-terms/privacy.html')}
                     >
                       Privacy Policy
                     </Text>

@@ -200,6 +200,18 @@ export default function UpgradeModal({ visible, onClose, onSuccess }) {
         <View style={styles.sheet}>
           <View style={styles.handle} />
 
+          {/* Close (X) — "Maybe Later" sits at the very bottom of a long
+              scrolling sheet and is easy to miss without scrolling all the
+              way down; this gives an always-visible way to dismiss. */}
+          <TouchableOpacity
+            style={styles.closeBtn}
+            onPress={onClose}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.closeBtnText}>✕</Text>
+          </TouchableOpacity>
+
           <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
 
             {/* ── Confirm card (after manual return) ───────────────── */}
@@ -367,6 +379,14 @@ const styles = StyleSheet.create({
     }),
   },
   handle: { width: 44, height: 4, borderRadius: 2, backgroundColor: '#E0E0E0', alignSelf: 'center', marginBottom: 16 },
+
+  closeBtn: {
+    position: 'absolute', top: 14, right: 14, zIndex: 10,
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  closeBtnText: { fontSize: 15, fontWeight: '700', color: '#6B7280' },
 
   crown:    { fontSize: 40, textAlign: 'center', marginBottom: 6 },
   title:    { fontSize: 22, fontWeight: '800', color: '#2D3436', textAlign: 'center', letterSpacing: -0.5 },

@@ -12,6 +12,7 @@ import { Routes } from 'src/constants/appConstants';
 import { MatchAPI, MessageAPI, PaymentAPI } from 'services/ApiServices';
 import { useAuth } from 'src/store/authStore';
 import { timeAgo } from 'src/utils/dateUtils';
+import MessagingPinGate from 'src/components/MessagingPinGate';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -210,7 +211,7 @@ const convStyles = StyleSheet.create({
 // ══════════════════════════════════════════════════════════════════════════════
 export default function MessagesScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, messagingUnlocked } = useAuth();
 
   const [activeTab,      setActiveTab]      = useState('All');
   const [matches,        setMatches]        = useState([]);
@@ -289,6 +290,19 @@ export default function MessagesScreen({ navigation }) {
       profile: boostedUser,
     });
   };
+
+  // ── Messaging PIN gate (Premium-only "app lock", like Messenger) ─────────
+  // Protects the conversation list/previews too, not just individual chats —
+  // ChatScreen gates the actual conversation, this gates the inbox itself so
+  // message snippets in the list below can't be seen either. No effect on
+  // free users (needsPinGate is always false for them).
+  const subActive = user?.isSubscribed &&
+    (!user.subscriptionExpiry || new Date(user.subscriptionExpiry) > new Date());
+  const needsPinGate = subActive && !messagingUnlocked;
+
+  if (needsPinGate) {
+    return <MessagingPinGate />;
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
