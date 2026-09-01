@@ -155,7 +155,8 @@ export const PaymentAPI = {
   // initialize time — not sent here, so a client can't claim a plan it
   // didn't actually pay for.
   verifyPayment:  (reference)          => api.post('/payment/verify', { reference }),
-  getTopProfiles: ()                   => api.get('/payment/top-profiles'),
+  // page/limit optional — defaults to page 1 / 15 per page server-side.
+  getTopProfiles: (page, limit)        => api.get('/payment/top-profiles', { params: { page, limit } }),
   getStatus:      ()                   => api.get('/payment/status'),
 };
 

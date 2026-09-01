@@ -228,7 +228,10 @@ export default function MessagesScreen({ navigation }) {
       const [matchData, convData, topData] = await Promise.all([
         MatchAPI.getMatches(),
         MessageAPI.getConversations(),
-        PaymentAPI.getTopProfiles().catch(() => ({ users: [] })), // non-fatal
+        // Preview row only needs a handful — the full, paginated list lives
+        // behind "View All" (LikesScreen's Top Profiles tab). Was fetching
+        // an unpaginated 20 here with no way to see any of the rest.
+        PaymentAPI.getTopProfiles(1, 10).catch(() => ({ users: [] })), // non-fatal
       ]);
       setMatches(matchData.matches             || DUMMY_MATCHES);
       setConversations(convData.conversations  || DUMMY_CONVERSATIONS);
@@ -367,9 +370,15 @@ export default function MessagesScreen({ navigation }) {
                 <View style={styles.boostedSection}>
                   <View style={styles.boostedHeader}>
                     <Text style={styles.boostedLabel}>⚡ Top Profiles</Text>
-                    <View style={styles.boostedBadge}>
-                      <Text style={styles.boostedBadgeText}>BOOSTED</Text>
-                    </View>
+                    {/* "View All" opens LikesScreen's own Top Profiles tab —
+                        a full, paginated grid — rather than trying to cram
+                        every currently-boosted user into this one row. */}
+                    <TouchableOpacity
+                      onPress={() => navigation.navigate(Routes.LIKES, { initialTab: 'top' })}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.viewAllText}>View All →</Text>
+                    </TouchableOpacity>
                   </View>
                   <FlatList
                     data={boostedProfiles}
@@ -462,10 +471,9 @@ const styles = StyleSheet.create({
 
   // ── Boosted profiles ───────────────────────────────────────────────────
   boostedSection: { backgroundColor: '#F0F8FF', paddingVertical: Spacing.md, paddingTop: 14 },
-  boostedHeader:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, marginBottom: 10, gap: 8 },
+  boostedHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, marginBottom: 10 },
   boostedLabel:   { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: '#2D3436' },
-  boostedBadge:   { backgroundColor: '#3498DB', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  boostedBadgeText: { fontSize: 9, color: '#fff', fontWeight: FontWeight.bold, letterSpacing: 0.5 },
+  viewAllText:    { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: '#3498DB' },
   boostedList:    { paddingHorizontal: Spacing.lg },
 
   // ── Stories ────────────────────────────────────────────────────────────

@@ -93,16 +93,26 @@ function MiniCard({ profile, badge, onPress, onUnlike, unliking }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-export default function LikesScreen({ navigation }) {
+export default function LikesScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
-  const [activeTab,    setActiveTab]    = useState('likes');
+  // MessagesScreen's "View All" on the Top Profiles preview row lands here
+  // directly on the 'top' tab, instead of always opening on 'likes'.
+  const initialTab = route?.params?.initialTab === 'top' ? 'top' : 'likes';
+
+  const [activeTab,    setActiveTab]    = useState(initialTab);
   const [likes,        setLikes]        = useState([]);
   const [topProfiles,  setTopProfiles]  = useState([]);
   const [loadingLikes, setLoadingLikes] = useState(true);
   const [loadingTop,   setLoadingTop]   = useState(false);
   const [topFetched,   setTopFetched]   = useState(false);
+  // Pagination for Top Profiles — was a single flat, unpaginated fetch, so
+  // anything beyond the backend's old hard cap of 20 was simply never
+  // reachable. Loads a page at a time as the grid is scrolled instead.
+  const [topPage,       setTopPage]       = useState(1);
+  const [topHasMore,    setTopHasMore]    = useState(true);
+  const [loadingMoreTop, setLoadingMoreTop] = useState(false);
   const [unlikingId,   setUnlikingId]   = useState(null);
   const [showUpgrade,  setShowUpgrade]  = useState(false);
 
@@ -119,22 +129,49 @@ export default function LikesScreen({ navigation }) {
     }
   }, []);
 
-  // ── Fetch boosted top profiles ────────────────────────────────────────────
+  // ── Fetch boosted top profiles (page 1) ───────────────────────────────────
   const fetchTopProfiles = useCallback(async () => {
     setLoadingTop(true);
     try {
-      const data = await PaymentAPI.getTopProfiles();
+      const data = await PaymentAPI.getTopProfiles(1, 30);
       const list = data.users || [];
       setTopProfiles(list.length > 0 ? list : __DEV__ ? DUMMY_TOP : []);
+      setTopPage(1);
+      setTopHasMore(!!data.hasMore);
     } catch {
-      if (__DEV__) setTopProfiles(DUMMY_TOP);
+      if (__DEV__) { setTopProfiles(DUMMY_TOP); setTopHasMore(false); }
     } finally {
       setLoadingTop(false);
       setTopFetched(true);
     }
   }, []);
 
-  useEffect(() => { fetchLikes(); }, []);
+  // ── Fetch the next page, appending to what's already loaded ──────────────
+  const fetchMoreTopProfiles = useCallback(async () => {
+    if (loadingMoreTop || !topHasMore) return;
+    setLoadingMoreTop(true);
+    try {
+      const nextPage = topPage + 1;
+      const data = await PaymentAPI.getTopProfiles(nextPage, 30);
+      setTopProfiles((prev) => [...prev, ...(data.users || [])]);
+      setTopPage(nextPage);
+      setTopHasMore(!!data.hasMore);
+    } catch {
+      // Non-fatal — just stop trying to load more this session rather than
+      // retrying forever on every scroll tick.
+      setTopHasMore(false);
+    } finally {
+      setLoadingMoreTop(false);
+    }
+  }, [loadingMoreTop, topHasMore, topPage]);
+
+  useEffect(() => {
+    fetchLikes();
+    // Land-directly-on-'top' (via MessagesScreen's "View All") wouldn't
+    // otherwise fetch anything — normally fetchTopProfiles only fires lazily
+    // from switchTab, which never runs for the tab you're already on.
+    if (initialTab === 'top') fetchTopProfiles();
+  }, []);
 
   // ── Unlike (dismiss) a like ───────────────────────────────────────────────
   const handleUnlike = useCallback((likeId) => {
@@ -268,6 +305,17 @@ export default function LikesScreen({ navigation }) {
           contentContainerStyle={styles.grid}
           columnWrapperStyle={styles.row}
           showsVerticalScrollIndicator={false}
+          // Likes has no pagination on the backend (getLikes returns
+          // everything at once) — only Top Profiles needs to page as you
+          // scroll, since that's the one that can genuinely run into the
+          // hundreds.
+          onEndReached={!isLikesTab ? fetchMoreTopProfiles : undefined}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            !isLikesTab && loadingMoreTop
+              ? <ActivityIndicator style={{ marginVertical: 16 }} color="#FF4B7A" />
+              : null
+          }
         />
       )}
 
