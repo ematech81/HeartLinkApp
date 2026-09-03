@@ -36,7 +36,6 @@ import ProfileScreen   from 'src/screens/main/ProfileScreen';
 import LikesScreen     from 'src/screens/main/LikesScreen';
 import CreatePostScreen from 'src/screens/main/CreatePostScreen';
 import { useAuth } from 'src/store/authStore';
-import OTPScreen from 'src/screens/auth/OtpScreen';
 import VerifyEmailScreen from 'src/screens/auth/VerifyEmailScreen';
 import ChatScreen from 'screen/main/ChatScreen';
 import UserProfileScreen from 'screen/main/UserProfileScreen';
@@ -212,7 +211,6 @@ export default function AppNavigator() {
               <Stack.Screen name={Routes.ONBOARDING} component={OnboardingScreen} />
               <Stack.Screen name={Routes.LOGIN} component={LoginScreen} />
               <Stack.Screen name={Routes.REGISTER} component={RegisterScreen} />
-              <Stack.Screen name={Routes.OTP} component={OTPScreen} />
               <Stack.Screen name={Routes.VERIFY_EMAIL} component={VerifyEmailScreen} />
               <Stack.Screen name={Routes.FORGOT_PASSWORD} component={ForgotPasswordScreen} />
               <Stack.Screen name={Routes.RESET_PASSWORD} component={ResetPasswordScreen} />

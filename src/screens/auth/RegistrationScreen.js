@@ -2,7 +2,7 @@
  * HeartLink RegisterScreen
  * Multi-step registration form (up to 9 steps depending on relationship type).
  *
- * Step 1 (name, email, phone, password) creates and verifies the account on
+ * Step 1 (name, email, password) creates and verifies the account on
  * its own — submitting it registers immediately, sends an email verification
  * code, and hands off to VerifyEmailScreen (see handleStep1Register). Once
  * verified, the user lands back on this screen at step 2, authenticated,
@@ -39,7 +39,6 @@ import {
   validateEmail,
   validatePassword,
   validateName,
-  validatePhone,
   validateDateOfBirth,
   validateRequired,
 }  from 'utils/Validation';
@@ -206,14 +205,16 @@ export default function RegisterScreen({ navigation, route }) {
 
   // ── "Complete profile" mode: skip step 1, start from step 2 ───────────────
   // Originally Google-only ("googleMode" — an already-authenticated user
-  // whose account exists but has no profile-detail fields yet), this now
-  // also covers local email/password and phone accounts (2026-08-27):
-  // step 1 (name/email/phone/password) submits immediately on its own (see
-  // handleStep1Register below) and creates the account right away, so by
-  // the time a user reaches step 2 they're always already authenticated —
-  // via Google, or via VerifyEmailScreen/phone-otp login after step 1. The
-  // param name stays `googleMode` since AppNavigator's CompleteProfile gate
-  // and LoginScreen both already pass it.
+  // whose account exists but has no profile-detail fields yet). Google
+  // sign-in and phone login/registration were both removed (2026-09-03 —
+  // Google wasn't working, BulkSMS only delivered OTPs after 10am daily),
+  // so email/password is now the only account-creation path — but it uses
+  // this exact same shape: step 1 (name/email/password) submits immediately
+  // on its own (see handleStep1Register below) and creates the account
+  // right away, so by the time a user reaches step 2 they're always already
+  // authenticated via VerifyEmailScreen. The param name stays `googleMode`
+  // (AppNavigator's CompleteProfile gate still passes it) rather than
+  // renaming it — this is purely an internal flag name, not user-facing.
   const googleMode  = route?.params?.googleMode  ?? false;
   const googleToken = route?.params?.googleToken ?? null;
   const googleUser  = route?.params?.googleUser  ?? null;
@@ -223,10 +224,10 @@ export default function RegisterScreen({ navigation, route }) {
   const [uploadProgress, setUploadProgress] = useState('');
   
  
-  // Step 1
+  // Step 1 — email + password only (phone signup removed, see note above)
   const step1 = useForm(
-    { name: '', email: '', phone: '', password: '' },
-    { name: validateName, email: validateEmail, phone: validatePhone, password: validatePassword }
+    { name: '', email: '', password: '' },
+    { name: validateName, email: validateEmail, password: validatePassword }
   );
  
   // Step 2
@@ -313,7 +314,7 @@ export default function RegisterScreen({ navigation, route }) {
   // the account wasn't created (and no verification email sent) until the
   // very end, after all 9 steps. Now step 1 IS the account-creation step:
   // tapping "Create Account" here registers immediately with just
-  // name/email/phone/password, the backend sends the verification code
+  // name/email/password, the backend sends the verification code
   // right away, and the remaining profile-detail steps (2-9) are collected
   // afterward — once verified — via the same authenticated
   // "complete your profile" flow Google sign-in already uses (see
@@ -325,7 +326,6 @@ export default function RegisterScreen({ navigation, route }) {
       const data = await AuthAPI.register({
         name:     step1.values.name.trim(),
         email:    step1.values.email.trim().toLowerCase(),
-        phone:    step1.values.phone.trim(),
         password: step1.values.password,
       });
 
@@ -354,7 +354,7 @@ export default function RegisterScreen({ navigation, route }) {
     } catch (err) {
       let message = err.message || 'Registration failed. Please try again.';
       if (message.toLowerCase().includes('already')) {
-        message = 'This email or phone number is already registered. Please log in instead.';
+        message = 'This email is already registered. Please log in instead.';
       }
       Alert.alert('Registration Failed', message);
     } finally {
@@ -469,11 +469,11 @@ export default function RegisterScreen({ navigation, route }) {
       };
 
       if (googleMode) {
-        // ── Profile-completion path (Google AND, since 2026-08-27, local
-        // email/phone accounts resumed here after step-1 verification) ────────
-        // The user already exists in the backend and is usually already
-        // authenticated (via VerifyEmailScreen/phone-otp, or a restored
-        // session for a Google user who reopened the app mid-flow). Only
+        // ── Profile-completion path — local email/password accounts resumed
+        // here after step-1 email verification (Google sign-in used this
+        // same path too before it was removed on 2026-09-03). The user
+        // already exists in the backend and is usually already authenticated
+        // (via VerifyEmailScreen, or a restored session mid-flow). Only
         // call loginWithToken when we actually have a fresh token to store —
         // AppNavigator's CompleteProfile gate deliberately passes
         // googleToken:null for an already-authenticated resume, since the
@@ -520,7 +520,7 @@ export default function RegisterScreen({ navigation, route }) {
     } catch (err) {
       let message = err.message || 'Registration failed. Please try again.';
       if (message.toLowerCase().includes('already')) {
-        message = 'This email or phone number is already registered. Please log in instead.';
+        message = 'This email is already registered. Please log in instead.';
         setStep(firstStep);
       }
       Alert.alert('Registration Failed', message);
@@ -546,9 +546,9 @@ export default function RegisterScreen({ navigation, route }) {
               value={step1.values.email} onChangeText={(v) => step1.handleChange('email', v)}
               onBlur={() => step1.handleBlur('email')} error={step1.errors.email}
               keyboardType="email-address" autoCapitalize="none" />
-            <Input label="Phone Number *" placeholder="+234 800 000 0000"
-              value={step1.values.phone} onChangeText={(v) => step1.handleChange('phone', v)}
-              onBlur={() => step1.handleBlur('phone')} error={step1.errors.phone} keyboardType="phone-pad" />
+            {/* Phone signup removed (2026-09-03) — BulkSMS was only
+                delivering OTPs after 10am daily, making phone registration
+                unreliable. Email is now the only account identifier. */}
             <Input label="Password *" placeholder="Minimum 8 characters"
               value={step1.values.password} onChangeText={(v) => step1.handleChange('password', v)}
               onBlur={() => step1.handleBlur('password')} error={step1.errors.password} secureTextEntry />

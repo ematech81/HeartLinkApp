@@ -9,7 +9,6 @@ export const Routes = {
   ONBOARDING: 'Onboarding',
   LOGIN: 'Login',
   REGISTER: 'Register',
-  OTP: 'OTP',
   VERIFY_EMAIL: 'VerifyEmail',
   FORGOT_PASSWORD: 'ForgotPassword',
   RESET_PASSWORD: 'ResetPassword',

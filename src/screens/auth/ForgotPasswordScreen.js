@@ -16,25 +16,19 @@ import AppStatusBar from 'src/component/common/AppStatusBar';
 import BackButton from 'src/component/common/BackButton';
 import Input from 'src/component/common/Input';
 import Button from 'src/component/common/Button';
-import { validateEmail, validatePhone } from 'utils/Validation';
+import { validateEmail } from 'utils/Validation';
 import { Routes } from 'src/constants/appConstants';
 import { Radius, Shadows, Spacing } from 'src/constants/layout';
 
-const METHODS = [
-  { id: 'email', label: '✉️  Email', placeholder: 'you@example.com', keyboardType: 'email-address' },
-  { id: 'phone', label: '📱  Phone', placeholder: '+234 800 000 0000', keyboardType: 'phone-pad' },
-];
-
+// Email/password is the only account type now (phone login removed
+// 2026-09-03) — this screen no longer needs an email/phone method toggle.
 export default function ForgotPasswordScreen({ navigation }) {
-  const [method, setMethod] = useState('email');
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const activeMethod = METHODS.find((m) => m.id === method);
-
   const validate = () => {
-    const err = method === 'email' ? validateEmail(value) : validatePhone(value);
+    const err = validateEmail(value);
     setError(err || '');
     return !err;
   };
@@ -43,28 +37,14 @@ export default function ForgotPasswordScreen({ navigation }) {
     if (!validate()) return;
     setLoading(true);
     try {
-      if (method === 'email') {
-        await AuthAPI.forgotPassword(value.trim());
-        // Navigate to reset screen — user will enter the 6-character code from their email
-        navigation.navigate(Routes.RESET_PASSWORD);
-      } else {
-        // Phone users don't have passwords — they log in with OTP directly
-        Alert.alert(
-          'Use Phone Sign-In',
-          'Phone accounts use OTP to sign in — no password needed. Go back and use the Phone tab on the login screen.',
-        );
-      }
+      await AuthAPI.forgotPassword(value.trim());
+      // Navigate to reset screen — user will enter the 6-character code from their email
+      navigation.navigate(Routes.RESET_PASSWORD);
     } catch (err) {
       Alert.alert('Error', err.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleMethodSwitch = (id) => {
-    setMethod(id);
-    setValue('');
-    setError('');
   };
 
   return (
@@ -88,36 +68,20 @@ export default function ForgotPasswordScreen({ navigation }) {
           </View>
           <Text style={styles.title}>Forgot Password?</Text>
           <Text style={styles.subtitle}>
-            No worries! Enter your {method === 'email' ? 'email address' : 'phone number'} and
+            No worries! Enter your email address and
             we'll send you a verification code to reset your password.
           </Text>
         </View>
 
-        {/* Method toggle */}
-        <View style={styles.toggleRow}>
-          {METHODS.map((m) => (
-            <TouchableOpacity
-              key={m.id}
-              style={[styles.toggleBtn, method === m.id && styles.toggleBtnActive]}
-              onPress={() => handleMethodSwitch(m.id)}
-              activeOpacity={0.75}
-            >
-              <Text style={[styles.toggleText, method === m.id && styles.toggleTextActive]}>
-                {m.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         {/* Input */}
         <Input
-          label={method === 'email' ? 'Email Address' : 'Phone Number'}
-          placeholder={activeMethod.placeholder}
+          label="Email Address"
+          placeholder="you@example.com"
           value={value}
           onChangeText={(v) => { setValue(v); setError(''); }}
           onBlur={validate}
           error={error}
-          keyboardType={activeMethod.keyboardType}
+          keyboardType="email-address"
           autoCapitalize="none"
           autoFocus
         />
@@ -136,9 +100,7 @@ export default function ForgotPasswordScreen({ navigation }) {
         <View style={styles.infoBox}>
           <Text style={styles.infoIcon}>ℹ️</Text>
           <Text style={styles.infoText}>
-            {method === 'email'
-              ? 'Check your spam folder if you do not see the email within a few minutes.'
-              : 'Standard SMS rates may apply depending on your carrier.'}
+            Check your spam folder if you do not see the email within a few minutes.
           </Text>
         </View>
 
@@ -204,34 +166,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     paddingHorizontal: Spacing.sm,
-  },
-
-  // ── Toggle ───────────────────────────────────────────────────────────────────
-  toggleRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    borderRadius: Radius.full,
-    padding: 4,
-    marginBottom: Spacing.lg,
-  },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: Radius.full,
-    alignItems: 'center',
-  },
-  toggleBtnActive: {
-    backgroundColor: Colors.white,
-    ...Shadows.sm,
-  },
-  toggleText: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.medium,
-    color: Colors.textSecondary,
-  },
-  toggleTextActive: {
-    color: Colors.primary,
-    fontWeight: FontWeight.semibold,
   },
 
   // ── Button ───────────────────────────────────────────────────────────────────

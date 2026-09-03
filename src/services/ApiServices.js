@@ -71,13 +71,15 @@ api.interceptors.response.use(
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth Endpoints
 // ─────────────────────────────────────────────────────────────────────────────
+// Google Sign-In and phone/OTP login+registration were both removed
+// (2026-09-03) — Google wasn't working, and BulkSMS only delivered OTPs
+// after 10am daily. Email/password is now the only account path; the
+// corresponding backend routes (/google, /send-otp, /verify-otp) were
+// unwired too — see routes/authRoutes.js.
 export const AuthAPI = {
   register:       (data)            => api.post('/auth/register', data),
   login:          (data)            => api.post('/auth/login', data),
-  googleAuth:     (accessToken)     => api.post('/auth/google', { accessToken }),
   getMe:          ()                => api.get('/auth/me'),
-  sendOtp:        (phone)           => api.post('/auth/send-otp', { phone }),
-  verifyOtp:      (phone, otp)      => api.post('/auth/verify-otp', { phone, otp }),
   verifyEmailOtp: (email, otp)      => api.post('/auth/verify-email-otp', { email, otp }),
   resendEmailOtp: (email)           => api.post('/auth/resend-email-otp', { email }),
   forgotPassword: (email)           => api.post('/auth/forgot-password', { email }),

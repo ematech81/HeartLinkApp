@@ -158,35 +158,13 @@ export function AuthProvider({ children }) {
     }
   };
  
-  // ── Login with token (after OTP verify or Google new-user profile complete) ─
+  // ── Login with token (after email OTP verify, or resuming a profile-
+  // completion session — see RegistrationScreen's googleMode) ────────────────
   const loginWithToken = async (token, user) => {
     await saveSession(token, user);
     dispatch({ type: AUTH_SUCCESS, payload: { token, user } });
   };
 
-  // ── Google Sign-In ────────────────────────────────────────────────────────
-  // Returns { success, isNewUser, token, user } so the caller can decide
-  // whether to go home (existing) or to RegistrationScreen (new user).
-  const googleLogin = async (accessToken) => {
-    dispatch({ type: SET_LOADING, payload: true });
-    try {
-      const data = await AuthAPI.googleAuth(accessToken);
-      if (!data.isNewUser) {
-        // Existing user — save session and authenticate immediately
-        await saveSession(data.token, data.user);
-        dispatch({ type: AUTH_SUCCESS, payload: { token: data.token, user: data.user } });
-      }
-      // For new users we intentionally do NOT dispatch AUTH_SUCCESS yet —
-      // the navigator must stay on the auth stack so RegistrationScreen is reachable.
-      dispatch({ type: SET_LOADING, payload: false });
-      return { success: true, isNewUser: !!data.isNewUser, token: data.token, user: data.user };
-    } catch (err) {
-      dispatch({ type: SET_ERROR, payload: err.message });
-      dispatch({ type: SET_LOADING, payload: false });
-      return { success: false, message: err.message };
-    }
-  };
- 
   // ── Logout ────────────────────────────────────────────────────────────────
   const logout = async () => {
     // Fired (not awaited) while the session's still valid — the API call
@@ -222,7 +200,6 @@ export function AuthProvider({ children }) {
         ...state,
         register,
         login,
-        googleLogin,
         loginWithToken,
         logout,
         updateUser,
